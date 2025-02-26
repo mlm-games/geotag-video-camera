@@ -10,42 +10,38 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.MediaStoreOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
+import androidx.camera.video.*
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -55,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -111,9 +108,13 @@ fun VideoRecorderApp(locationManager: LocationManager) {
 
     // Location state
     var currentLocation by remember { mutableStateOf<Location?>(null) }
-    var currentSpeed by remember { mutableStateOf(0f) }
+    var currentSpeed by remember { mutableFloatStateOf(0f) }
     var currentTime by remember { mutableStateOf("") }
     var gpsStatus by remember { mutableStateOf("Searching...") }
+
+    // UI state
+    var showMap by remember { mutableStateOf(false) }
+    var mapOpacity by remember { mutableFloatStateOf(0.5f) }
 
     // Update time every second
     LaunchedEffect(Unit) {
@@ -123,7 +124,7 @@ fun VideoRecorderApp(locationManager: LocationManager) {
         }
     }
 
-    // Setup location updates using Android's LocationManager (more reliable than Google Play Services)
+    // Setup location updates
     DisposableEffect(Unit) {
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
@@ -184,13 +185,130 @@ fun VideoRecorderApp(locationManager: LocationManager) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Camera Preview
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
             onVideoCaptureReady = { videoCapture = it }
         )
 
-        // Geotag overlay
-        GeotagOverlay(
+        // OpenStreetMap overlay (conditionally shown)
+        AnimatedVisibility(
+            visible = showMap,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = mapOpacity))
+            ) {
+                if (currentLocation != null) {
+                    // Show map with location
+                    var isMapLoaded by remember { mutableStateOf(false) }
+
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        isMapLoaded = true
+                                    }
+                                }
+
+                                val lat = currentLocation?.latitude ?: 0.0
+                                val lon = currentLocation?.longitude ?: 0.0
+
+                                loadUrl(
+                                    "https://www.openstreetmap.org/export/embed.html" +
+                                            "?bbox=${lon - 0.005},${lat - 0.005}," +
+                                            "${lon + 0.005},${lat + 0.005}" +
+                                            "&layer=mapnik&marker=${lat},${lon}"
+                                )
+                            }
+                        },
+                    update = { webView ->
+                        val lat = currentLocation?.latitude ?: 0.0
+                        val lon = currentLocation?.longitude ?: 0.0
+
+                            webView.loadUrl(
+                                "https://www.openstreetmap.org/export/embed.html" +
+                                        "?bbox=${lon - 0.005},${lat - 0.005}," +
+                                        "${lon + 0.005},${lat + 0.005}" +
+                                        "&layer=mapnik&marker=${lat},${lon}"
+                            )
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    LaunchedEffect(currentLocation) {
+                        while (true) {
+                            delay(3000)
+                        }
+                    }
+
+                    // Show loading indicator
+                    if (!isMapLoaded) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = Color.Blue)
+                        }
+                    }
+                } else {
+                    // Show "Waiting for location" message
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Waiting for GPS location...",
+                                color = Color.Black,
+                                style = TextStyle(fontWeight = FontWeight.Bold)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            CircularProgressIndicator(color = Color.Blue)
+                        }
+                    }
+                }
+
+                // Map opacity control
+                if (showMap) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            "Map Opacity",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                        Slider(
+                            value = mapOpacity,
+                            onValueChange = { mapOpacity = it },
+                            valueRange = 0.2f..0.8f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+
+        // Geotag overlay with improved UI
+        EnhancedGeotagOverlay(
             location = currentLocation,
             speed = currentSpeed,
             time = currentTime,
@@ -199,30 +317,86 @@ fun VideoRecorderApp(locationManager: LocationManager) {
             modifier = Modifier.fillMaxSize()
         )
 
-        Button(
-            onClick = {
-                if (recording != null) {
-                    recording?.stop()
-                    recording = null
-                } else {
-                    recording = startRecording(
-                        context = context,
-                        videoCapture = videoCapture,
-                        executor = executor
-                    )
-                }
-            },
+        // Control buttons
+        Row(
+            horizontalArrangement = Arrangement.SpaceEvenly,
             modifier = Modifier
+                .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 32.dp)
         ) {
-            Text(if (recording == null) "Start Recording" else "Stop Recording")
+            // Map toggle button
+            IconButton(
+                onClick = {
+                    showMap = !showMap
+                    if (showMap) {
+                        Toast.makeText(context, "Map overlay enabled", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Map,
+                    contentDescription = "Toggle Map",
+                    tint = if (showMap) Color.Green else Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            // Record button
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
+                    .border(2.dp, if (recording != null) Color.Red else Color.White, CircleShape)
+                    .clickable {
+                        if (recording != null) {
+                            recording?.stop()
+                            recording = null
+                        } else {
+                            recording = startRecording(
+                                context = context,
+                                videoCapture = videoCapture,
+                                executor = executor
+                            )
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            if (recording != null) Color.Red else Color.White,
+                            if (recording != null) RoundedCornerShape(8.dp) else CircleShape
+                        )
+                )
+            }
+
+            // Settings button (placeholder for future functionality)
+            IconButton(
+                onClick = {
+                    Toast.makeText(context, "Settings (not implemented)", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-fun GeotagOverlay(
+fun EnhancedGeotagOverlay(
     location: Location?,
     speed: Float,
     time: String,
@@ -231,37 +405,94 @@ fun GeotagOverlay(
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
-        // Top info bar
+        // Top info panel with modern design
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .padding(8.dp)
+                .padding(top = 8.dp, start = 8.dp, end = 8.dp)
         ) {
-            Text(
-                text = time,
-                color = Color.White,
-                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            )
+            // Time and GPS status
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.7f))
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = time,
+                    color = Color.White,
+                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                )
 
-            Text(
-                text = gpsStatus,
-                color = if (gpsStatus.contains("Fixed") || gpsStatus.contains("Active")) Color.Green else Color.Yellow,
-                style = TextStyle(fontSize = 14.sp)
-            )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Canvas(modifier = Modifier.size(10.dp)) {
+                        drawCircle(
+                            color = when {
+                                gpsStatus.contains("Fixed") -> Color.Green
+                                gpsStatus.contains("Active") -> Color(0xFFFFAA00) // Orange
+                                else -> Color.Red
+                            }
+                        )
+                    }
 
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Text(
+                        text = gpsStatus,
+                        color = Color.White,
+                        style = TextStyle(fontSize = 14.sp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Location data
             location?.let {
-                Text(
-                    text = "Lat: ${String.format("%.6f", it.latitude)} Lon: ${String.format("%.6f", it.longitude)}",
-                    color = Color.White,
-                    style = TextStyle(fontSize = 14.sp)
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(12.dp)
+                ) {
+                    // Coordinates
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        LocationDataItem(
+                            label = "Latitude",
+                            value = String.format("%.6f°", it.latitude)
+                        )
 
-                Text(
-                    text = "Alt: ${String.format("%.1f", it.altitude)}m Speed: ${String.format("%.1f", speed)} km/h",
-                    color = Color.White,
-                    style = TextStyle(fontSize = 14.sp)
-                )
+                        LocationDataItem(
+                            label = "Longitude",
+                            value = String.format("%.6f°", it.longitude)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Altitude and speed
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        LocationDataItem(
+                            label = "Altitude",
+                            value = String.format("%.1f m", it.altitude)
+                        )
+
+                        LocationDataItem(
+                            label = "Speed",
+                            value = String.format("%.1f km/h", speed)
+                        )
+                    }
+                }
             }
         }
 
@@ -285,6 +516,23 @@ fun GeotagOverlay(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun LocationDataItem(label: String, value: String) {
+    Column {
+        Text(
+            text = label,
+            color = Color.LightGray,
+            style = TextStyle(fontSize = 12.sp)
+        )
+
+        Text(
+            text = value,
+            color = Color.White,
+            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        )
     }
 }
 
@@ -367,20 +615,30 @@ fun startRecording(
             if (ContextCompat.checkSelfPermission(
                     context,
                     Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED) {
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
                 withAudioEnabled()
             }
         }
         .start(executor) { recordEvent ->
-            when(recordEvent) {
+            when (recordEvent) {
                 is VideoRecordEvent.Start -> {
                     Toast.makeText(context, "Recording started", Toast.LENGTH_SHORT).show()
                 }
+
                 is VideoRecordEvent.Finalize -> {
                     if (recordEvent.hasError()) {
-                        Toast.makeText(context, "Recording error: ${recordEvent.error}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            context,
+                            "Recording error: ${recordEvent.error}",
+                            Toast.LENGTH_LONG
+                        ).show()
                     } else {
-                        Toast.makeText(context, "Recording saved: ${recordEvent.outputResults.outputUri}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            context,
+                            "Recording saved: ${recordEvent.outputResults.outputUri}",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
             }
