@@ -19,6 +19,7 @@ cameraLifecycle = "1.4.1"
 cameraVideo = "1.4.1"
 cameraView = "1.4.1"
 material = "1.12.0"
+playServicesLocation = "21.3.0"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions" }
@@ -56,6 +57,7 @@ androidx-camera-view = { group = "androidx.camera", name = "camera-view", versio
 material = { module = "com.google.android.material:material", version.ref = "material" }
 material3 = { module = "androidx.compose.material3:material3" }
 play-services-location = { module = "com.google.android.gms:play-services-location" }
+gms-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
