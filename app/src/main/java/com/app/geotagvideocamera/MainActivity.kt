@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun VideoRecorderApp(locationManager: LocationManager) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    //val lifecycleOwner = LocalLifecycleOwner.current
 
     var recording by remember { mutableStateOf<Recording?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
@@ -120,7 +120,7 @@ fun VideoRecorderApp(locationManager: LocationManager) {
     LaunchedEffect(Unit) {
         while(true) {
             currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-            kotlinx.coroutines.delay(1000)
+            delay(1000)
         }
     }
 
@@ -550,7 +550,7 @@ fun CameraPreview(
         val preview = androidx.camera.core.Preview.Builder().build()
         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
-        preview.setSurfaceProvider(previewView.surfaceProvider)
+        preview.surfaceProvider = previewView.surfaceProvider
 
         val recorder = Recorder.Builder()
             .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
