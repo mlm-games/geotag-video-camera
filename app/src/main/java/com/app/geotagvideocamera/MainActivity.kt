@@ -5,22 +5,45 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.*
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,28 +55,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.*
-import com.google.android.gms.location.FusedLocationProviderClient
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 class MainActivity : ComponentActivity() {
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationManager: LocationManager
 
-    private val requestPermissions =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            if (permissions.all { it.value }) {
-                startApp()
-            }
+    private val requestPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        if (permissions.all { it.value }) {
+            startApp()
+        } else {
+            Toast.makeText(this, "Permissions required for full functionality", Toast.LENGTH_LONG).show()
+            startApp()
         }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         val requiredPermissions = mutableListOf(
             Manifest.permission.CAMERA,
@@ -71,13 +95,13 @@ class MainActivity : ComponentActivity() {
 
     private fun startApp() {
         setContent {
-            VideoRecorderApp(fusedLocationClient)
+            VideoRecorderApp(locationManager)
         }
     }
 }
 
 @Composable
-fun VideoRecorderApp(fusedLocationClient: FusedLocationProviderClient) {
+fun VideoRecorderApp(locationManager: LocationManager) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -89,42 +113,73 @@ fun VideoRecorderApp(fusedLocationClient: FusedLocationProviderClient) {
     var currentLocation by remember { mutableStateOf<Location?>(null) }
     var currentSpeed by remember { mutableStateOf(0f) }
     var currentTime by remember { mutableStateOf("") }
+    var gpsStatus by remember { mutableStateOf("Searching...") }
 
     // Update time every second
     LaunchedEffect(Unit) {
-        while (true) {
+        while(true) {
             currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
             kotlinx.coroutines.delay(1000)
         }
     }
 
-    // Setup location updates
-    LaunchedEffect(Unit) {
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000)
-            .setWaitForAccurateLocation(false)
-            .setMinUpdateIntervalMillis(500)
-            .setMaxUpdateDelayMillis(1000)
-            .build()
+    // Setup location updates using Android's LocationManager (more reliable than Google Play Services)
+    DisposableEffect(Unit) {
+        val locationListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                currentLocation = location
+                currentSpeed = location.speed * 3.6f // Convert m/s to km/h
+                gpsStatus = if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
+            }
 
-        val locationCallback = object : LocationCallback() {
-            override fun onLocationResult(locationResult: LocationResult) {
-                locationResult.lastLocation?.let { location ->
-                    currentLocation = location
-                    currentSpeed = location.speed * 3.6f // Convert m/s to km/h
-                }
+            override fun onProviderEnabled(provider: String) {
+                gpsStatus = "GPS Enabled"
+            }
+
+            override fun onProviderDisabled(provider: String) {
+                gpsStatus = "GPS Disabled"
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+                // Required for older Android versions
             }
         }
 
         if (ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback,
-                context.mainLooper
-            )
+            ) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                // Try to use GPS provider first
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    locationManager.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER,
+                        1000, // 1 second
+                        0f, // 0 meters
+                        locationListener
+                    )
+                } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    // Fall back to network provider if GPS is not available
+                    locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        1000,
+                        0f,
+                        locationListener
+                    )
+                    gpsStatus = "Using Network Location"
+                } else {
+                    gpsStatus = "Location Providers Disabled"
+                }
+            } catch (e: Exception) {
+                gpsStatus = "Location Error: ${e.message}"
+            }
+        } else {
+            gpsStatus = "Location Permission Denied"
+        }
+
+        onDispose {
+            locationManager.removeUpdates(locationListener)
         }
     }
 
@@ -139,6 +194,7 @@ fun VideoRecorderApp(fusedLocationClient: FusedLocationProviderClient) {
             location = currentLocation,
             speed = currentSpeed,
             time = currentTime,
+            gpsStatus = gpsStatus,
             isRecording = recording != null,
             modifier = Modifier.fillMaxSize()
         )
@@ -170,6 +226,7 @@ fun GeotagOverlay(
     location: Location?,
     speed: Float,
     time: String,
+    gpsStatus: String,
     isRecording: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -187,33 +244,25 @@ fun GeotagOverlay(
                 style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold)
             )
 
+            Text(
+                text = gpsStatus,
+                color = if (gpsStatus.contains("Fixed") || gpsStatus.contains("Active")) Color.Green else Color.Yellow,
+                style = TextStyle(fontSize = 14.sp)
+            )
+
             location?.let {
                 Text(
-                    text = "Lat: ${String.format("%.6f", it.latitude)} Lon: ${
-                        String.format(
-                            "%.6f",
-                            it.longitude
-                        )
-                    }",
+                    text = "Lat: ${String.format("%.6f", it.latitude)} Lon: ${String.format("%.6f", it.longitude)}",
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp)
                 )
 
                 Text(
-                    text = "Alt: ${
-                        String.format(
-                            "%.1f",
-                            it.altitude
-                        )
-                    }m Speed: ${String.format("%.1f", speed)} km/h",
+                    text = "Alt: ${String.format("%.1f", it.altitude)}m Speed: ${String.format("%.1f", speed)} km/h",
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp)
                 )
-            } ?: Text(
-                text = "GPS Signal Searching...",
-                color = Color.Yellow,
-                style = TextStyle(fontSize = 14.sp)
-            )
+            }
         }
 
         // Recording indicator
@@ -325,13 +374,13 @@ fun startRecording(
         .start(executor) { recordEvent ->
             when(recordEvent) {
                 is VideoRecordEvent.Start -> {
-                    // Recording started
+                    Toast.makeText(context, "Recording started", Toast.LENGTH_SHORT).show()
                 }
                 is VideoRecordEvent.Finalize -> {
                     if (recordEvent.hasError()) {
-                        //TODO: Handle error
+                        Toast.makeText(context, "Recording error: ${recordEvent.error}", Toast.LENGTH_LONG).show()
                     } else {
-                        // Video saved successfully
+                        Toast.makeText(context, "Recording saved: ${recordEvent.outputResults.outputUri}", Toast.LENGTH_LONG).show()
                     }
                 }
             }
