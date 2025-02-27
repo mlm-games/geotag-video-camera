@@ -4,12 +4,14 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -17,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.view.PreviewView
@@ -43,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
@@ -74,7 +78,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
 
         val requiredPermissions = mutableListOf(
             Manifest.permission.CAMERA,
@@ -115,6 +119,7 @@ fun VideoRecorderApp(locationManager: LocationManager) {
     // UI state
     var showMap by remember { mutableStateOf(false) }
     var mapOpacity by remember { mutableFloatStateOf(0.5f) }
+    val overlayView = remember { ComposeView(context) }
 
     // Update time every second
     LaunchedEffect(Unit) {
@@ -359,7 +364,8 @@ fun VideoRecorderApp(locationManager: LocationManager) {
                             recording = startRecording(
                                 context = context,
                                 videoCapture = videoCapture,
-                                executor = executor
+                                executor = executor,
+                                overlayView = overlayView
                             )
                         }
                     },
@@ -547,7 +553,7 @@ fun CameraPreview(
 
     LaunchedEffect(previewView) {
         val cameraProvider = context.getCameraProvider()
-        val preview = androidx.camera.core.Preview.Builder().build()
+        val preview = Preview.Builder().build()
         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
         preview.surfaceProvider = previewView.surfaceProvider
@@ -589,7 +595,8 @@ suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutin
 fun startRecording(
     context: Context,
     videoCapture: VideoCapture<Recorder>?,
-    executor: Executor
+    executor: Executor,
+    overlayView: View // Add this parameter
 ): Recording? {
     if (videoCapture == null) return null
 
@@ -609,7 +616,15 @@ fun startRecording(
         .setContentValues(contentValues)
         .build()
 
-    return videoCapture.output
+    // Create video processor
+    val processor = VideoOverlayProcessor(
+        context,
+        overlayView.width,
+        overlayView.height
+    )
+
+    // Configure recording with frame processor
+    val recording = videoCapture.output
         .prepareRecording(context, mediaStoreOutputOptions)
         .apply {
             if (ContextCompat.checkSelfPermission(
@@ -620,27 +635,57 @@ fun startRecording(
                 withAudioEnabled()
             }
         }
-        .start(executor) { recordEvent ->
-            when (recordEvent) {
-                is VideoRecordEvent.Start -> {
-                    Toast.makeText(context, "Recording started", Toast.LENGTH_SHORT).show()
-                }
+        .withFrameProcessor { frame ->
+            // Update overlay bitmap with current overlay state
+            processor.updateOverlay(overlayView)
 
-                is VideoRecordEvent.Finalize -> {
-                    if (recordEvent.hasError()) {
-                        Toast.makeText(
-                            context,
-                            "Recording error: ${recordEvent.error}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "Recording saved: ${recordEvent.outputResults.outputUri}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
+            // Get the overlay bitmap
+            val overlay = processor.getOverlayBitmap()
+
+            // Combine frame with overlay
+            if (overlay != null) {
+                val canvas = androidx.compose.ui.graphics.Canvas(frame.surface)
+                canvas.drawBitmap(overlay, 0f, 0f, null)
+            }
+        }
+
+    return recording.start(executor) { recordEvent ->
+        when (recordEvent) {
+            is VideoRecordEvent.Start -> {
+                Toast.makeText(context, "Recording started", Toast.LENGTH_SHORT).show()
+            }
+            is VideoRecordEvent.Finalize -> {
+                if (recordEvent.hasError()) {
+                    Toast.makeText(
+                        context,
+                        "Recording error: ${recordEvent.error}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Recording saved: ${recordEvent.outputResults.outputUri}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
+    }
 }
+
+class VideoOverlayProcessor(
+    private val context: Context,
+    private val width: Int,
+    private val height: Int
+) {
+    private var overlayBitmap: Bitmap? = null
+
+    fun updateOverlay(composeView: View) {
+        overlayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(overlayBitmap!!)
+        composeView.draw(canvas)
+    }
+
+    fun getOverlayBitmap(): Bitmap? = overlayBitmap
+}
+

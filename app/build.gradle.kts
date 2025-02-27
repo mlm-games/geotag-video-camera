@@ -72,7 +72,6 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core)
 
-    val cameraVersion = "1.5.0-alpha05"
     implementation(libs.androidx.camera.core)
     implementation(libs.camera.camera2)
     implementation(libs.androidx.camera.lifecycle.v150alpha05)
@@ -85,6 +84,9 @@ dependencies {
 // Compose
     implementation(libs.material3)
     implementation(libs.androidx.material.icons.extended)
+
+    implementation("androidx.camera:camera-video:1.3.0")
+    implementation("androidx.camera:camera-extensions:1.3.0")
 
 
 }
