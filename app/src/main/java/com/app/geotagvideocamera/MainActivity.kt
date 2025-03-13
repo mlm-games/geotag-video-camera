@@ -9,6 +9,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import android.provider.MediaStore
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -51,7 +52,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -97,6 +106,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun useGooglePlayServicesLocation(context: Context, locationListener: LocationListener) {
+    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+
+    val locationRequest = LocationRequest.create().apply {
+        interval = 1000 // Update interval in milliseconds
+        fastestInterval = 500
+        priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+    }
+
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED) {
+
+        fusedLocationClient.requestLocationUpdates(
+            locationRequest,
+            object : LocationCallback() {
+                override fun onLocationResult(locationResult: LocationResult) {
+                    locationResult.lastLocation?.let { location ->
+                        // Use the same listener to maintain consistent behavior
+                        locationListener.onLocationChanged(location)
+                    }
+                }
+            },
+            Looper.getMainLooper()
+        )
+    }
+}
+
 @Composable
 fun VideoRecorderApp(locationManager: LocationManager) {
     val context = LocalContext.current
@@ -130,7 +168,8 @@ fun VideoRecorderApp(locationManager: LocationManager) {
             override fun onLocationChanged(location: Location) {
                 currentLocation = location
                 currentSpeed = location.speed * 3.6f // Convert m/s to km/h
-                gpsStatus = if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
+                gpsStatus =
+                    if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
             }
 
             override fun onProviderEnabled(provider: String) {
@@ -147,10 +186,13 @@ fun VideoRecorderApp(locationManager: LocationManager) {
             }
         }
 
+        var locationJob: Job? = null
+
         if (ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED) {
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             try {
                 // Try to use GPS provider first
                 if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -160,6 +202,18 @@ fun VideoRecorderApp(locationManager: LocationManager) {
                         0f, // 0 meters
                         locationListener
                     )
+
+                    // Set a timeout using coroutine
+                    locationJob = CoroutineScope(Dispatchers.Main).launch {
+                        delay(10000) // 10 seconds timeout
+                        if (currentLocation == null) {
+                            // No location after 10 seconds, switch to Google Play Services
+                            locationManager.removeUpdates(locationListener)
+                            useGooglePlayServicesLocation(context, locationListener)
+                            gpsStatus = "Using Google Play Services Location"
+                        }
+                    }
+
                 } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                     // Fall back to network provider if GPS is not available
                     locationManager.requestLocationUpdates(
@@ -169,11 +223,26 @@ fun VideoRecorderApp(locationManager: LocationManager) {
                         locationListener
                     )
                     gpsStatus = "Using Network Location"
+
+                    // Also set a timeout for network provider
+                    locationJob = CoroutineScope(Dispatchers.Main).launch {
+                        delay(10000) // 10 seconds timeout
+                        if (currentLocation == null) {
+                            // No location after 10 seconds, switch to Google Play Services
+                            locationManager.removeUpdates(locationListener)
+                            useGooglePlayServicesLocation(context, locationListener)
+                            gpsStatus = "Using Google Play Services Location"
+                        }
+                    }
                 } else {
-                    gpsStatus = "Location Providers Disabled"
+                    // If neither GPS nor network is available, use Google Play Services directly
+                    useGooglePlayServicesLocation(context, locationListener)
+                    gpsStatus = "Using Google Play Services Location"
                 }
             } catch (e: Exception) {
-                gpsStatus = "Location Error: ${e.message}"
+                // On any error, try Google Play Services as fallback
+                useGooglePlayServicesLocation(context, locationListener)
+                gpsStatus = "Location Error, Using Google Play Services"
             }
         } else {
             gpsStatus = "Location Permission Denied"
@@ -181,6 +250,9 @@ fun VideoRecorderApp(locationManager: LocationManager) {
 
         onDispose {
             locationManager.removeUpdates(locationListener)
+            // Cancel the timeout job if it's still active
+            locationJob?.cancel()
+            // Also clean up Google Play Services location client if used
         }
     }
 
