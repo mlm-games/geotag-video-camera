@@ -7,10 +7,15 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import android.provider.MediaStore
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -133,6 +138,13 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
             Looper.getMainLooper()
         )
     }
+}
+
+private fun isNetworkAvailable(context: Context): Boolean {
+    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
 @Composable
@@ -289,22 +301,38 @@ fun VideoRecorderApp(locationManager: LocationManager) {
                         factory = { ctx ->
                             WebView(ctx).apply {
                                 settings.javaScriptEnabled = true
-                                webViewClient = object : WebViewClient() {
+                                settings.domStorageEnabled = true
+                                settings.cacheMode = WebSettings.LOAD_DEFAULT
+
+                                    webViewClient = object : WebViewClient() {
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
                                         isMapLoaded = true
                                     }
+                                        // ADD THIS ERROR HANDLER:
+                                        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                                            super.onReceivedError(view, request, error)
+                                            view?.loadData("<html><body><h3>Map loading failed</h3><p>Check your internet connection</p></body></html>", "text/html", "UTF-8")
+                                        }
                                 }
 
                                 val lat = currentLocation?.latitude ?: 0.0
                                 val lon = currentLocation?.longitude ?: 0.0
 
-                                loadUrl(
-                                    "https://www.openstreetmap.org/export/embed.html" +
-                                            "?bbox=${lon - 0.005},${lat - 0.005}," +
-                                            "${lon + 0.005},${lat + 0.005}" +
-                                            "&layer=mapnik&marker=${lat},${lon}"
-                                )
+                                if (isNetworkAvailable(ctx)) {
+                                    loadUrl(
+                                        "https://www.openstreetmap.org/export/embed.html" +
+                                                "?bbox=${lon - 0.005},${lat - 0.005}," +
+                                                "${lon + 0.005},${lat + 0.005}" +
+                                                "&layer=mapnik&marker=${lat},${lon}"
+                                    )
+                                } else {
+                                    loadData(
+                                        "<html><body><h3>No internet connection</h3></body></html>",
+                                        "text/html",
+                                        "UTF-8"
+                                    )
+                                }
                             }
                         },
                     update = { webView ->
@@ -716,3 +744,72 @@ fun startRecording(
             }
         }
 }
+
+
+
+
+
+
+
+//Looking at the error message "ERR_NAME_NOT_RESOLVED" in the map overlay, this is a DNS resolution problem that typically occurs when a web request can't find the server address.
+//
+//The issue is likely happening because the WebView in your app is trying to load the OpenStreetMap URL, but the device doesn't have proper internet connectivity when using the WebView component specifically.
+//
+//Here's what might be causing the issue:
+//
+//1. **Missing Internet Permission**: While you do have the internet permission in your AndroidManifest.xml, make sure it's properly applied.
+//
+//2. **Network Connectivity**: The app might be running when the device has limited or no internet connectivity.
+//
+//3. **WebView Configuration**: The WebView might need additional configuration to handle network connections properly.
+//
+//To fix this issue, try these solutions:
+//
+//```kt
+//// In your WebView configuration, add these additional settings
+//webView.apply {
+//    settings.javaScriptEnabled = true
+//    settings.domStorageEnabled = true  // Enable DOM storage
+//    settings.cacheMode = WebSettings.LOAD_DEFAULT  // Use cache if possible
+//
+//    // Add a WebViewClient that handles errors
+//    webViewClient = object : WebViewClient() {
+//        override fun onPageFinished(view: WebView?, url: String?) {
+//            super.onPageFinished(view, url)
+//            isMapLoaded = true
+//        }
+//
+//        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+//            super.onReceivedError(view, request, error)
+//            // Show error message in the WebView
+//            view?.loadData("<html><body><h3>Map loading failed</h3><p>Check your internet connection</p></body></html>", "text/html", "UTF-8")
+//        }
+//    }
+//}
+//```
+//
+//Also, consider implementing a network connectivity check before attempting to load the map:
+//
+//```kt
+//// Add this function to check for internet connectivity
+//private fun isNetworkAvailable(context: Context): Boolean {
+//    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+//    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+//        val network = connectivityManager.activeNetwork ?: return false
+//        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+//        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+//    } else {
+//        val networkInfo = connectivityManager.activeNetworkInfo
+//        return networkInfo != null && networkInfo.isConnected
+//    }
+//}
+//
+//// Then use it before loading the map
+//if (isNetworkAvailable(context)) {
+//    webView.loadUrl("https://www.openstreetmap.org/export/embed.html?bbox=...")
+//} else {
+//    webView.loadData("<html><body><h3>No internet connection</h3></body></html>", "text/html", "UTF-8")
+//}
+//```
+//
+//Would you like me to explain how these changes work?
