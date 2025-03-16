@@ -1,12 +1,14 @@
 package com.app.geotagvideocamera
 
 import android.Manifest
-Rimport android.app.Activity
+import android.view.GestureDetector
+import android.view.MotionEvent
+
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.location.Location
@@ -17,7 +19,6 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
@@ -26,7 +27,6 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.util.Log
-import android.view.Surface
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -37,7 +37,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
@@ -89,8 +88,12 @@ import java.util.Locale
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sqrt
 
-// TODO: Double tapping the screen should open settings, the map overlay should display by default when app opens, Should show a toast on app launch saying take a screenshot or use screen recording to capture the geo-tag with the overlay,
+//TODO: Add in readme, for recording below android 10, use an external screen recorder instead (as the default android screen recorder isn't present).
+// TODO: Double tapping the screen should open settings, the map should be smaller in height, the settings should have the hide status bar and hide nav bar options?
 class MainActivity : ComponentActivity() {
     private lateinit var locationManager: LocationManager
     private var mediaProjectionManager: MediaProjectionManager? = null
@@ -158,7 +161,7 @@ class MainActivity : ComponentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
-            if (resultCode == Activity.RESULT_OK && data != null) {
+            if (resultCode == RESULT_OK && data != null) {
                 // Start recording with projection permission
                 mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
                 startScreenRecording()
@@ -171,11 +174,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startApp() {
+        Toast.makeText(
+            this,
+            "Take a screenshot or use screen recording to capture the geo-tag overlay",
+            Toast.LENGTH_LONG
+        ).show()
+
         setContent {
             VideoRecorderApp(
                 locationManager = locationManager,
                 onVideoCaptureReady = { videoCapture = it },
-                onRecordButtonClick = ::handleRecordButtonClick
+                onRecordButtonClick = ::handleRecordButtonClick,
+                onDoubleTapSettings = {
+                    // Show a simple settings dialog or toast for now
+                    Toast.makeText(this, "Settings (coming soon)", Toast.LENGTH_SHORT).show()
+                }
+
             )
         }
     }
@@ -360,9 +374,9 @@ private fun shouldUpdateMap(lat: Double, lon: Double): Boolean {
 
 private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
     // Simple distance calculation
-    val latDiff = Math.abs(lat1 - lat2) * 111000 // approx meters per degree of latitude
-    val lonDiff = Math.abs(lon1 - lon2) * 111000 * Math.cos(Math.toRadians(lat1))
-    return Math.sqrt(latDiff * latDiff + lonDiff * lonDiff)
+    val latDiff = abs(lat1 - lat2) * 111000 // approx meters per degree of latitude
+    val lonDiff = abs(lon1 - lon2) * 111000 * cos(Math.toRadians(lat1))
+    return sqrt(latDiff * latDiff + lonDiff * lonDiff)
 }
 
 private fun getErrorHtml(errorMsg: String): String {
@@ -402,13 +416,10 @@ private fun getMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
         </head>
         <body>
             <div id="map">
-                <img src="https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lon&zoom=$zoom&size=400x400&markers=color:red%7C$lat,$lon" 
-                     width="100%" height="100%" alt="Map" ```kt
-rerror="this.onerror=null;this.src='error.png';"/>
+                <img src="https://maps.geoapify.com/v1/staticmap?style=osm-carto&width=400&height=400&center=lonlat:$lon,$lat&zoom=$zoom&marker=lonlat:$lon,$lat;color:%23ff0000;size:medium" 
+                     width="100%" height="100%" alt="Map" 
+                     onerror="this.onerror=null;this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';document.body.innerHTML += '<div style=\'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;\'><strong>Map loading failed</strong><br>Check internet connection</div>'"/>
             </div>
-            <script>
-                // This is intentionally left blank.  The static map should load immediately.
-            </script>
         </body>
         </html>
     """.trimIndent()
@@ -419,7 +430,8 @@ rerror="this.onerror=null;this.src='error.png';"/>
 fun VideoRecorderApp(
     locationManager: LocationManager,
     onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
-    onRecordButtonClick: () -> Unit
+    onRecordButtonClick: () -> Unit,
+    onDoubleTapSettings: () -> Unit
 ) {
     val context = LocalContext.current
     var recording by remember { mutableStateOf<Recording?>(null) }
@@ -433,7 +445,7 @@ fun VideoRecorderApp(
     var gpsStatus by remember { mutableStateOf("Searching...") }
 
     // UI state
-    var showMap by remember { mutableStateOf(false) }
+    var showMap by remember { mutableStateOf(true) }
     var mapOpacity by remember { mutableFloatStateOf(0.5f) }
     var isMapLoaded by remember { mutableStateOf(false) }
     var mapLoadError by remember { mutableStateOf<String?>(null) }
@@ -547,7 +559,9 @@ fun VideoRecorderApp(
         // Camera Preview
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
-            onVideoCaptureReady = onVideoCaptureReady
+            onVideoCaptureReady = onVideoCaptureReady,
+            onDoubleTap = onDoubleTapSettings
+
         )
 
         AnimatedVisibility(
@@ -555,9 +569,11 @@ fun VideoRecorderApp(
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
+                .width(360.dp)
+                .height(80.dp)
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .align(Alignment.TopEnd)
+                .align(Alignment.BottomCenter)
                 .padding(16.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .border(2.dp, Color.White, RoundedCornerShape(12.dp))
@@ -666,7 +682,7 @@ fun VideoRecorderApp(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Map loading failed: ${mapLoadError}",
+                                text = "Map loading failed: $mapLoadError",
                                 color = Color.Red,
                                 style = TextStyle(fontWeight = FontWeight.Bold)
                             )
@@ -690,90 +706,92 @@ fun VideoRecorderApp(
                     }
                 }
 
-                // Map opacity control
-                if (showMap) {
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            "Map Opacity",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                        Slider(
-                            value = mapOpacity,
-                            onValueChange = { mapOpacity = it },
-                            valueRange = 0.2f..0.8f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+//                 Map opacity control
+//                if (showMap) {
+//                    Row(
+//                        modifier = Modifier
+//                            .align(Alignment.BottomCenter)
+//                            .fillMaxWidth()
+//                            .background(Color.Black.copy(alpha = 0.3f))
+//                            .padding(4.dp),
+//                        verticalAlignment = Alignment.CenterVertically
+//                    ) {
+//                        Text(
+//                            "Opacity",
+//                            color = Color.White,
+//                            fontSize = 10.sp,
+//                            modifier = Modifier.padding(horizontal = 4.dp)
+//                        )
+//                        Slider(
+//                            value = mapOpacity,
+//                            onValueChange = { mapOpacity = it },
+//                            valueRange = 0.2f..0.8f,
+//                            modifier = Modifier.weight(1f)
+//                        )
+//                    }
+//                }
             }
         }
 
-        EnhancedGeotagOverlay(
-            location = currentLocation,
-            speed = currentSpeed,
-            time = currentTime,
-            gpsStatus = gpsStatus,
-            isRecording = recording != null,
-            modifier = Modifier.fillMaxSize()
-        )
+//        EnhancedGeotagOverlay(
+//            location = currentLocation,
+//            speed = currentSpeed,
+//            time = currentTime,
+//            gpsStatus = gpsStatus,
+//            isRecording = recording != null,
+//            modifier = Modifier.fillMaxSize()
+//        )
 
         // Control buttons
-        Row(
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp)
-        ) {
-            // Map toggle button
-            IconButton(
-                onClick = {
-                    showMap = !showMap
-                    if (showMap) {
-                        Toast.makeText(context, "Map overlay enabled", Toast.LENGTH_SHORT).show()
-                    }
-                    isMapLoaded = false
-                    mapLoadError = null
-                },
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Map,
-                    contentDescription = "Toggle Map",
-                    tint = if (showMap) Color.Green else Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            // Record button
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
-                    .border(2.dp, if (recording != null) Color.Red else Color.White, CircleShape)
-                    .clickable(onClick = onRecordButtonClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            if (recording != null) Color.Red else Color.White,
-                            if (recording != null) RoundedCornerShape(8.dp) else CircleShape
-                        )
-                )
-            }
-
-            // Settings button (placeholder for future functionality)
+//        Row(
+//            horizontalArrangement = Arrangement.SpaceEvenly,
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .align(Alignment.BottomCenter)
+//                .padding(bottom = 32.dp)
+//        ) {
+//            // Map toggle button
+//            IconButton(
+//                onClick = {
+//                    showMap = !showMap
+//                    if (showMap) {
+//                        Toast.makeText(context, "Map overlay enabled", Toast.LENGTH_SHORT).show()
+//                    }
+//                    isMapLoaded = false
+//                    mapLoadError = null
+//                },
+//                modifier = Modifier
+//                    .size(56.dp)
+//                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
+//            ) {
+//                Icon(
+//                    imageVector = Icons.Default.Map,
+//                    contentDescription = "Toggle Map",
+//                    tint = if (showMap) Color.Green else Color.White,
+//                    modifier = Modifier.size(32.dp)
+//                )
+//            }
+//
+//            // Record button
+//            Box(
+//                modifier = Modifier
+//                    .size(72.dp)
+//                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
+//                    .border(2.dp, if (recording != null) Color.Red else Color.White, CircleShape)
+//                    .clickable(onClick = onRecordButtonClick),
+//                contentAlignment = Alignment.Center
+//            ) {
+//                Box(
+//                    modifier = Modifier
+//                        .size(48.dp)
+//                        .background(
+//                            if (recording != null) Color.Red else Color.White,
+//                            if (recording != null) RoundedCornerShape(8.dp) else CircleShape
+//                        )
+//                )
+//            }
+//
+//            // Settings button (placeholder for future functionality)
 //            IconButton(
 //                onClick = {
 //                    Toast.makeText(context, "Settings (not implemented)", Toast.LENGTH_SHORT).show()
@@ -782,14 +800,13 @@ fun VideoRecorderApp(
 //                    .size(56.dp)
 //                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
 //            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = Color.Transparent, // Color.White,
-                    modifier = Modifier.size(56.dp) //Modifier.size(32.dp)
-                )
-//            }
-        }
+//                Icon(
+//                    imageVector = Icons.Default.Settings,
+//                    contentDescription = "Settings",
+//                    tint = Color.Transparent, // Color.White,
+//                    modifier = Modifier.size(56.dp) //Modifier.size(32.dp)
+//                )
+//        }
     }
 }
 
@@ -803,30 +820,30 @@ fun EnhancedGeotagOverlay(
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
-        // Top info panel with modern design
+//         Simplified top info panel with clean design
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp, start = 8.dp, end = 8.dp)
         ) {
-            // Time and GPS status
+//             Time and GPS status in a single row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.7f))
-                    .padding(12.dp),
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = time,
                     color = Color.White,
-                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Canvas(modifier = Modifier.size(10.dp)) {
+                    Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(
                             color = when {
                                 gpsStatus.contains("Fixed") -> Color.Green
@@ -836,72 +853,54 @@ fun EnhancedGeotagOverlay(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     Text(
                         text = gpsStatus,
                         color = Color.White,
-                        style = TextStyle(fontSize = 14.sp)
+                        style = TextStyle(fontSize = 12.sp)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Location data
+            // Location data in a more compact format
             location?.let {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black.copy(alpha = 0.7f))
-                        .padding(12.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Coordinates
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        LocationDataItem(
-                            label = "Latitude",
-                            value = String.format("%.6f°", it.latitude)
-                        )
+                    Text(
+                        text = String.format("%.6f°, %.6f°", it.latitude, it.longitude),
+                        color = Color.White,
+                        style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    )
 
-                        LocationDataItem(
-                            label = "Longitude",
-                            value = String.format("%.6f°", it.longitude)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Altitude and speed
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        LocationDataItem(
-                            label = "Altitude",
-                            value = String.format("%.1f m", it.altitude)
-                        )
-
-                        LocationDataItem(
-                            label = "Speed",
-                            value = String.format("%.1f km/h", speed)
-                        )
-                    }
+                    Text(
+                        text = String.format("%.1f m | %.1f km/h", it.altitude, speed),
+                        color = Color.White,
+                        style = TextStyle(fontSize = 14.sp)
+                    )
                 }
             }
         }
 
-        // Recording indicator
+        // Minimal recording indicator
         if (isRecording) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Canvas(modifier = Modifier.size(12.dp)) {
+                Canvas(modifier = Modifier.size(8.dp)) {
                     drawCircle(Color.Red)
                 }
 
@@ -910,7 +909,7 @@ fun EnhancedGeotagOverlay(
                 Text(
                     text = "REC",
                     color = Color.Red,
-                    style = TextStyle(fontWeight = FontWeight.Bold)
+                    style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 )
             }
         }
@@ -918,30 +917,26 @@ fun EnhancedGeotagOverlay(
 }
 
 @Composable
-fun LocationDataItem(label: String, value: String) {
-    Column {
-        Text(
-            text = label,
-            color = Color.LightGray,
-            style = TextStyle(fontSize = 12.sp)
-        )
-
-        Text(
-            text = value,
-            color = Color.White,
-            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        )
-    }
-}
-
-@Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
-    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit
+    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
+    onDoubleTap: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
+
+    // Add double tap detector
+    val doubleTapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            onDoubleTap()
+            return true
+        }
+    })
+
+    previewView.setOnTouchListener { _, event ->
+        doubleTapDetector.onTouchEvent(event)
+    }
 
     LaunchedEffect(previewView) {
         val cameraProvider = context.getCameraProvider()
