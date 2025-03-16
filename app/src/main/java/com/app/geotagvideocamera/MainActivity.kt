@@ -1,10 +1,6 @@
 package com.app.geotagvideocamera
 
 import android.Manifest
-import android.view.GestureDetector
-import android.view.MotionEvent
-
-import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -19,7 +15,6 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -27,9 +22,8 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.util.Log
-import android.webkit.SslErrorHandler
-import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -41,23 +35,12 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -82,6 +65,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
+import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -250,7 +236,7 @@ class MainActivity : ComponentActivity() {
             Log.e("ScreenRecording", "Error starting screen recording: ${e.message}")
             e.printStackTrace()
 
-            // Fall back to regular recording
+            // Fall back to regular video recording
             Toast.makeText(this, "Screen recording failed. Using regular recording.", Toast.LENGTH_SHORT).show()
             startRegularRecording()
         }
@@ -358,11 +344,11 @@ private var lastMapUpdateTime = 0L
 
 private fun shouldUpdateMap(lat: Double, lon: Double): Boolean {
     val now = System.currentTimeMillis()
-    // Only update if moved more than 10 meters or 5 seconds passed
+    // Only update if moved more than 50 meters or 10 seconds passed
     val distanceMoved = calculateDistance(lastMapUpdateLat, lastMapUpdateLon, lat, lon)
     val timePassed = now - lastMapUpdateTime
 
-    return if (distanceMoved > 10 || timePassed > 5000) {
+    return if (distanceMoved > 50 || timePassed > 10000) {
         lastMapUpdateLat = lat
         lastMapUpdateLon = lon
         lastMapUpdateTime = now
@@ -379,53 +365,53 @@ private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Do
     return sqrt(latDiff * latDiff + lonDiff * lonDiff)
 }
 
-private fun getErrorHtml(errorMsg: String): String {
+private fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
     return """
         <!DOCTYPE html>
         <html>
         <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>
-                body { font-family: Arial, sans-serif; text-align: center; padding: 20px; 
-                       background: #f0f0f0; color: #333; }
-                .error { color: #d32f2f; font-weight: bold; margin: 20px 0; }
-                .details { font-size: 14px; margin-bottom: 20px; }
-            </style>
-        </head>
-        <body>
-            <div class="error">Map loading failed</div>
-            <div class="details">$errorMsg</div>
-            <div>Check your internet connection and try again</div>
-        </body>
-        </html>
-    """.trimIndent()
-}
-
-private fun getMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
-    return """
-        <!DOCTYPE html>
-        <html>
-        <head>
+            <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
                 body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
                 #map { width: 100%; height: 100%; background: #f0f0f0; }
-                .marker { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; 
-                          margin-left: -10px; margin-top: -20px; color: red; font-size: 24px; }
             </style>
         </head>
         <body>
-            <div id="map">
-                <img src="https://maps.geoapify.com/v1/staticmap?style=osm-carto&width=400&height=400&center=lonlat:$lon,$lat&zoom=$zoom&marker=lonlat:$lon,$lat;color:%23ff0000;size:medium" 
-                     width="100%" height="100%" alt="Map" 
-                     onerror="this.onerror=null;this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';document.body.innerHTML += '<div style=\'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;\'><strong>Map loading failed</strong><br>Check internet connection</div>'"/>
-            </div>
+            <div id="map"></div>
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    var map = L.map('map', {
+                        zoomControl: false,
+                        attributionControl: false
+                    }).setView([$lat, $lon], $zoom);
+
+                    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19
+                    }).addTo(map);
+
+                    // Add a marker
+                    var marker = L.marker([$lat, $lon]).addTo(map);
+                });
+            </script>
         </body>
         </html>
     """.trimIndent()
 }
 
-// Composable function for the main UI
+private fun readAssetContent(context: Context, assetFileName: String): String? {
+    return try {
+        context.assets.open(assetFileName)
+            .bufferedReader()
+            .use { it.readText() }
+    } catch (e: IOException) {
+        Log.e("AssetError", "Error reading asset file: $assetFileName", e)
+        null
+    }
+}
+
 @Composable
 fun VideoRecorderApp(
     locationManager: LocationManager,
@@ -434,9 +420,7 @@ fun VideoRecorderApp(
     onDoubleTapSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    var recording by remember { mutableStateOf<Recording?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
-    val executor = remember { ContextCompat.getMainExecutor(context) }
 
     // Location state
     var currentLocation by remember { mutableStateOf<Location?>(null) }
@@ -444,18 +428,19 @@ fun VideoRecorderApp(
     var currentTime by remember { mutableStateOf("") }
     var gpsStatus by remember { mutableStateOf("Searching...") }
 
-    // UI state
-    var showMap by remember { mutableStateOf(true) }
-    var mapOpacity by remember { mutableFloatStateOf(0.5f) }
-    var isMapLoaded by remember { mutableStateOf(false) }
-    var mapLoadError by remember { mutableStateOf<String?>(null) }
+    // WebView state
+    var leafletMapHtml by remember { mutableStateOf("") }
 
-    // WebView State
-    val webView = remember { mutableStateOf<WebView?>(null) }
+    // Initialize Leaflet Map HTML
+    LaunchedEffect(Unit) {
+        val initialLat = 0.0
+        val initialLon = 0.0
+        leafletMapHtml = getLeafletMapHtml(initialLat, initialLon)
+    }
 
     // Update time every second
     LaunchedEffect(Unit) {
-        while(true) {
+        while (true) {
             currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
             delay(1000)
         }
@@ -469,6 +454,9 @@ fun VideoRecorderApp(
                 currentSpeed = location.speed * 3.6f // Convert m/s to km/h
                 gpsStatus =
                     if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
+
+                // Update Leaflet Map HTML with the new location
+                leafletMapHtml = getLeafletMapHtml(location.latitude, location.longitude)
             }
 
             override fun onProviderEnabled(provider: String) {
@@ -549,9 +537,7 @@ fun VideoRecorderApp(
 
         onDispose {
             locationManager.removeUpdates(locationListener)
-            // Cancel the timeout job if it's still active
             locationJob?.cancel()
-            // Also clean up Google Play Services location client if used
         }
     }
 
@@ -560,273 +546,15 @@ fun VideoRecorderApp(
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
             onVideoCaptureReady = onVideoCaptureReady,
-            onDoubleTap = onDoubleTapSettings
-
+//            onDoubleTap = onDoubleTapSettings
         )
 
-        AnimatedVisibility(
-            visible = showMap,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .width(360.dp)
-                .height(80.dp)
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White.copy(alpha = mapOpacity))
-            ) {
-                if (currentLocation != null) {
-                    // Show map with location
-                    val lat = currentLocation?.latitude ?: 0.0
-                    val lon = currentLocation?.longitude ?: 0.0
-                    val shouldUpdate = shouldUpdateMap(lat, lon)
-
-                    AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                webView.value = this
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.cacheMode = WebSettings.LOAD_DEFAULT
-
-                                webViewClient = object : WebViewClient() {
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        super.onPageFinished(view, url)
-                                        isMapLoaded = true
-                                    }
-
-                                    override fun onReceivedError(
-                                        view: WebView?,
-                                        request: WebResourceRequest?,
-                                        error: WebResourceError?
-                                    ) {
-                                        super.onReceivedError(view, request, error)
-                                        val errorMessage = error?.description?.toString() ?: "Unknown error"
-                                        mapLoadError = "Failed to load map: $errorMessage"
-                                        val errorHtml = getErrorHtml(errorMessage)
-                                        view?.loadDataWithBaseURL(
-                                            null,
-                                            errorHtml,
-                                            "text/html",
-                                            "UTF-8",
-                                            null
-                                        )
-                                    }
-
-                                    override fun onReceivedSslError(
-                                        view: WebView?,
-                                        handler: SslErrorHandler?,
-                                        error: SslError?
-                                    ) {
-                                        super.onReceivedSslError(view, handler, error)
-                                        val errorMessage = error?.toString() ?: "SSL Error"
-                                        mapLoadError = "SSL Error: $errorMessage"
-                                        val errorHtml = getErrorHtml(errorMessage)
-                                        view?.loadDataWithBaseURL(
-                                            null,
-                                            errorHtml,
-                                            "text/html",
-                                            "UTF-8",
-                                            null
-                                        )
-                                    }
-                                }
-
-                                loadDataWithBaseURL(
-                                    null,
-                                    getMapHtml(lat, lon),
-                                    "text/html",
-                                    "UTF-8",
-                                    null
-                                )
-                            }
-                        },
-                        update = { webView ->
-                            if (shouldUpdate && currentLocation != null) {
-                                val lat = currentLocation?.latitude ?: 0.0
-                                val lon = currentLocation?.longitude ?: 0.0
-
-                                webView.loadDataWithBaseURL(
-                                    null,
-                                    getMapHtml(lat, lon),
-                                    "text/html",
-                                    "UTF-8",
-                                    null
-                                )
-                                isMapLoaded = false
-                                mapLoadError = null
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-
-                    // Show loading indicator
-                    if (!isMapLoaded && mapLoadError == null) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = Color.Blue)
-                        }
-                    } else if (mapLoadError != null) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Map loading failed: $mapLoadError",
-                                color = Color.Red,
-                                style = TextStyle(fontWeight = FontWeight.Bold)
-                            )
-                        }
-                    }
-                } else {
-                    // Show "Waiting for location" message
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "Waiting for GPS location...",
-                                color = Color.Black,
-                                style = TextStyle(fontWeight = FontWeight.Bold)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            CircularProgressIndicator(color = Color.Blue)
-                        }
-                    }
-                }
-
-//                 Map opacity control
-//                if (showMap) {
-//                    Row(
-//                        modifier = Modifier
-//                            .align(Alignment.BottomCenter)
-//                            .fillMaxWidth()
-//                            .background(Color.Black.copy(alpha = 0.3f))
-//                            .padding(4.dp),
-//                        verticalAlignment = Alignment.CenterVertically
-//                    ) {
-//                        Text(
-//                            "Opacity",
-//                            color = Color.White,
-//                            fontSize = 10.sp,
-//                            modifier = Modifier.padding(horizontal = 4.dp)
-//                        )
-//                        Slider(
-//                            value = mapOpacity,
-//                            onValueChange = { mapOpacity = it },
-//                            valueRange = 0.2f..0.8f,
-//                            modifier = Modifier.weight(1f)
-//                        )
-//                    }
-//                }
-            }
-        }
-
-//        EnhancedGeotagOverlay(
-//            location = currentLocation,
-//            speed = currentSpeed,
-//            time = currentTime,
-//            gpsStatus = gpsStatus,
-//            isRecording = recording != null,
-//            modifier = Modifier.fillMaxSize()
-//        )
-
-        // Control buttons
-//        Row(
-//            horizontalArrangement = Arrangement.SpaceEvenly,
-//            modifier = Modifier
-//                .fillMaxWidth()
-//                .align(Alignment.BottomCenter)
-//                .padding(bottom = 32.dp)
-//        ) {
-//            // Map toggle button
-//            IconButton(
-//                onClick = {
-//                    showMap = !showMap
-//                    if (showMap) {
-//                        Toast.makeText(context, "Map overlay enabled", Toast.LENGTH_SHORT).show()
-//                    }
-//                    isMapLoaded = false
-//                    mapLoadError = null
-//                },
-//                modifier = Modifier
-//                    .size(56.dp)
-//                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
-//            ) {
-//                Icon(
-//                    imageVector = Icons.Default.Map,
-//                    contentDescription = "Toggle Map",
-//                    tint = if (showMap) Color.Green else Color.White,
-//                    modifier = Modifier.size(32.dp)
-//                )
-//            }
-//
-//            // Record button
-//            Box(
-//                modifier = Modifier
-//                    .size(72.dp)
-//                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
-//                    .border(2.dp, if (recording != null) Color.Red else Color.White, CircleShape)
-//                    .clickable(onClick = onRecordButtonClick),
-//                contentAlignment = Alignment.Center
-//            ) {
-//                Box(
-//                    modifier = Modifier
-//                        .size(48.dp)
-//                        .background(
-//                            if (recording != null) Color.Red else Color.White,
-//                            if (recording != null) RoundedCornerShape(8.dp) else CircleShape
-//                        )
-//                )
-//            }
-//
-//            // Settings button (placeholder for future functionality)
-//            IconButton(
-//                onClick = {
-//                    Toast.makeText(context, "Settings (not implemented)", Toast.LENGTH_SHORT).show()
-//                },
-//                modifier = Modifier
-//                    .size(56.dp)
-//                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
-//            ) {
-//                Icon(
-//                    imageVector = Icons.Default.Settings,
-//                    contentDescription = "Settings",
-//                    tint = Color.Transparent, // Color.White,
-//                    modifier = Modifier.size(56.dp) //Modifier.size(32.dp)
-//                )
-//        }
-    }
-}
-
-@Composable
-fun EnhancedGeotagOverlay(
-    location: Location?,
-    speed: Float,
-    time: String,
-    gpsStatus: String,
-    isRecording: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Box(modifier = modifier) {
-//         Simplified top info panel with clean design
-        Column(
+        // Top status bar with GPS information
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp, start = 8.dp, end = 8.dp)
         ) {
-//             Time and GPS status in a single row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -837,9 +565,9 @@ fun EnhancedGeotagOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = time,
+                    text = currentTime,
                     color = Color.White,
-                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -862,18 +590,73 @@ fun EnhancedGeotagOverlay(
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(4.dp))
+        // Map overlay at bottom center
+        Box(
+            modifier = Modifier
+                .width(240.dp)
+                .height(150.dp)
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+        ) {
+            AndroidView(
+                factory = { context ->
+                    WebView(context).apply {
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            cacheMode = WebSettings.LOAD_NO_CACHE
+                        }
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
+                                val uri = request.url
+                                if (uri.scheme == "file" && uri.path?.startsWith("/android_asset/") == true) {
+                                    val assetPath = uri.path!!.substring("/android_asset/".length)
+                                    return try {
+                                        val inputStream = context.assets.open(assetPath)
+                                        val mimeType = when {
+                                            assetPath.endsWith(".css") -> "text/css"
+                                            assetPath.endsWith(".js") -> "text/javascript"
+                                            else -> "text/html" // default
+                                        }
+                                        WebResourceResponse(mimeType, "UTF-8", inputStream)
+                                    } catch (e: IOException) {
+                                        Log.e("WebView", "Error loading asset $assetPath", e)
+                                        null
+                                    }
+                                }
+                                return super.shouldInterceptRequest(view, request)
+                            }
+                        }
+                        loadDataWithBaseURL("file:///android_asset/", leafletMapHtml, "text/html", "UTF-8", null)
+                    }
+                },
+                update = { webView ->
+                    webView.loadDataWithBaseURL("file:///android_asset/", leafletMapHtml, "text/html", "UTF-8", null)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
-            // Location data in a more compact format
-            location?.let {
-                Row(
+        // Location coordinates display just above the map
+        currentLocation?.let {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 180.dp) // Adjusted for smaller map
+                    .align(Alignment.BottomCenter)
+            ) {
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .align(Alignment.Center)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.Black.copy(alpha = 0.5f))
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
                         text = String.format("%.6f°, %.6f°", it.latitude, it.longitude),
@@ -881,36 +664,23 @@ fun EnhancedGeotagOverlay(
                         style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     )
 
-                    Text(
-                        text = String.format("%.1f m | %.1f km/h", it.altitude, speed),
-                        color = Color.White,
-                        style = TextStyle(fontSize = 14.sp)
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = String.format("Alt: %.1f m", it.altitude),
+                            color = Color.White,
+                            style = TextStyle(fontSize = 12.sp)
+                        )
+
+                        Text(
+                            text = String.format("Speed: %.1f km/h", currentSpeed),
+                            color = Color.White,
+                            style = TextStyle(fontSize = 12.sp)
+                        )
+                    }
                 }
-            }
-        }
-
-        // Minimal recording indicator
-        if (isRecording) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Canvas(modifier = Modifier.size(8.dp)) {
-                    drawCircle(Color.Red)
-                }
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                Text(
-                    text = "REC",
-                    color = Color.Red,
-                    style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                )
             }
         }
     }
@@ -919,24 +689,11 @@ fun EnhancedGeotagOverlay(
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
-    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
-    onDoubleTap: () -> Unit
+    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
-
-    // Add double tap detector
-    val doubleTapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDoubleTap(e: MotionEvent): Boolean {
-            onDoubleTap()
-            return true
-        }
-    })
-
-    previewView.setOnTouchListener { _, event ->
-        doubleTapDetector.onTouchEvent(event)
-    }
 
     LaunchedEffect(previewView) {
         val cameraProvider = context.getCameraProvider()

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <script>
+        // Function to initialize map with coordinates
+        function initMap(lat, lon) {
+            // If Leaflet is not loaded, load it dynamically
+            if (typeof L === 'undefined') {
+                var link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                document.head.appendChild(link);
+                
+                var script = document.createElement('script');
+                script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                script.onload = function() {
+                    createMap(lat, lon);
+                };
+                document.head.appendChild(script);
+            } else {
+                createMap(lat, lon);
+            }
+        }
+        
+        // Create the actual map
+        function createMap(lat, lon) {
+            var map = L.map('map', {
+                zoomControl: false,
+                attributionControl: false
+            }).setView([lat, lon], 15);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            var marker = L.marker([lat, lon]).addTo(map);
+            
+            // Disable map interactions for better performance
+            map.dragging.disable();
+            map.touchZoom.disable();
+            map.doubleClickZoom.disable();
+            map.scrollWheelZoom.disable();
+            map.boxZoom.disable();
+            map.keyboard.disable();
+            if (map.tap) map.tap.disable();
+        }
+        
+        // Initialize map when Android calls this
+        function updateLocation(lat, lon) {
+            initMap(lat, lon);
+        }
+        
+        // For initial load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Default coordinates (will be updated by Android)
+            initMap(0, 0);
+        });
+    </script>
+</body>
+</html>
