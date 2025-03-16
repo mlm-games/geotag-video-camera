@@ -1,18 +1,33 @@
 package com.app.geotagvideocamera
 
 import android.Manifest
+Rimport android.app.Activity
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.MediaRecorder
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
+import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.DisplayMetrics
+import android.util.Log
+import android.view.Surface
+import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -22,6 +37,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
@@ -66,6 +82,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,8 +90,21 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+// TODO: Double tapping the screen should open settings, the map overlay should display by default when app opens, Should show a toast on app launch saying take a screenshot or use screen recording to capture the geo-tag with the overlay,
 class MainActivity : ComponentActivity() {
     private lateinit var locationManager: LocationManager
+    private var mediaProjectionManager: MediaProjectionManager? = null
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var mediaRecorder: MediaRecorder? = null
+    private var isRecordingScreen = false
+    private var screenDensity = 0
+    private var screenWidth = 0
+    private var screenHeight = 0
+    private var videoCapture: VideoCapture<Recorder>? = null
+    private var recording: Recording? = null
+
+    private val SCREEN_CAPTURE_REQUEST_CODE = 1001
 
     private val requestPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
         if (permissions.all { it.value }) {
@@ -88,29 +118,189 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Initialize location services
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
+        // Get screen metrics for recording
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getMetrics(metrics)
+        screenDensity = metrics.densityDpi
+        screenWidth = metrics.widthPixels
+        screenHeight = metrics.heightPixels
+
+        // Initialize MediaProjectionManager for screen recording
+        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+
+        // Request required permissions
         val requiredPermissions = mutableListOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.INTERNET,
+            Manifest.permission.ACCESS_NETWORK_STATE
         )
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             requiredPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
 
+        // Add screen recording permissions for Android 10+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE)
+        }
+
         requestPermissions.launch(requiredPermissions.toTypedArray())
+    }
+
+    @Deprecated("This method has been deprecated in favor of using the Activity Result API\n      which brings increased type safety via an {@link ActivityResultContract} and the prebuilt\n      contracts for common intents available in\n      {@link androidx.activity.result.contract.ActivityResultContracts}, provides hooks for\n      testing, and allow receiving results in separate, testable classes independent from your\n      activity. Use\n      {@link #registerForActivityResult(ActivityResultContract, ActivityResultCallback)}\n      with the appropriate {@link ActivityResultContract} and handling the result in the\n      {@link ActivityResultCallback#onActivityResult(Object) callback}.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                // Start recording with projection permission
+                mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
+                startScreenRecording()
+            } else {
+                // Fall back to regular video recording
+                Toast.makeText(this, "Screen recording permission denied. Using regular recording.", Toast.LENGTH_SHORT).show()
+                startRegularRecording()
+            }
+        }
     }
 
     private fun startApp() {
         setContent {
-            VideoRecorderApp(locationManager)
+            VideoRecorderApp(
+                locationManager = locationManager,
+                onVideoCaptureReady = { videoCapture = it },
+                onRecordButtonClick = ::handleRecordButtonClick
+            )
         }
+    }
+
+    private fun handleRecordButtonClick() {
+        if (isRecordingScreen || recording != null) {
+            stopRecording()
+        } else {
+            // Request screen capture permission
+            mediaProjectionManager?.createScreenCaptureIntent()?.let {
+                startActivityForResult(
+                    it,
+                    SCREEN_CAPTURE_REQUEST_CODE
+                )
+            }
+        }
+    }
+
+    private fun stopRecording() {
+        if (isRecordingScreen) {
+            stopScreenRecording()
+        } else {
+            recording?.stop()
+            recording = null
+        }
+    }
+
+    private fun startRegularRecording() {
+        recording = startRecording(
+            context = this,
+            videoCapture = videoCapture,
+            executor = ContextCompat.getMainExecutor(this)
+        )
+    }
+
+    private fun startScreenRecording() {
+        try {
+            prepareMediaRecorder()
+
+            // Create virtual display for recording
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "GeotagCamera",
+                screenWidth,
+                screenHeight,
+                screenDensity,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                mediaRecorder?.surface,
+                null,
+                null
+            )
+
+            // Start recording
+            mediaRecorder?.start()
+            isRecordingScreen = true
+
+            Toast.makeText(this, "Screen recording with overlay started", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("ScreenRecording", "Error starting screen recording: ${e.message}")
+            e.printStackTrace()
+
+            // Fall back to regular recording
+            Toast.makeText(this, "Screen recording failed. Using regular recording.", Toast.LENGTH_SHORT).show()
+            startRegularRecording()
+        }
+    }
+
+    private fun stopScreenRecording() {
+        try {
+            mediaRecorder?.apply {
+                stop()
+                reset()
+                release()
+            }
+
+            virtualDisplay?.release()
+            mediaProjection?.stop()
+
+            isRecordingScreen = false
+            Toast.makeText(this, "Recording saved to Movies/GeotagCamera", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("ScreenRecording", "Error stopping screen recording: ${e.message}")
+        }
+    }
+
+    private fun prepareMediaRecorder() {
+        val videoFilePath = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)}/GeotagCamera"
+        val videoFile = File(videoFilePath)
+        if (!videoFile.exists()) {
+            videoFile.mkdirs()
+        }
+
+        val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
+            .format(System.currentTimeMillis())
+        val outputFile = "$videoFilePath/GeotagVideo_$timestamp.mp4"
+
+        mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(this)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
+
+        mediaRecorder?.apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setVideoSize(screenWidth, screenHeight)
+            setVideoFrameRate(30)
+            setOutputFile(outputFile)
+            prepare()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up resources
+        mediaRecorder?.release()
+        virtualDisplay?.release()
+        mediaProjection?.stop()
     }
 }
 
+// Location utilities
 private fun useGooglePlayServicesLocation(context: Context, locationListener: LocationListener) {
     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
 
@@ -147,11 +337,91 @@ private fun isNetworkAvailable(context: Context): Boolean {
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
-@Composable
-fun VideoRecorderApp(locationManager: LocationManager) {
-    val context = LocalContext.current
-    //val lifecycleOwner = LocalLifecycleOwner.current
+// Map utilities
+private var lastMapUpdateLat = 0.0
+private var lastMapUpdateLon = 0.0
+private var lastMapUpdateTime = 0L
 
+private fun shouldUpdateMap(lat: Double, lon: Double): Boolean {
+    val now = System.currentTimeMillis()
+    // Only update if moved more than 10 meters or 5 seconds passed
+    val distanceMoved = calculateDistance(lastMapUpdateLat, lastMapUpdateLon, lat, lon)
+    val timePassed = now - lastMapUpdateTime
+
+    return if (distanceMoved > 10 || timePassed > 5000) {
+        lastMapUpdateLat = lat
+        lastMapUpdateLon = lon
+        lastMapUpdateTime = now
+        true
+    } else {
+        false
+    }
+}
+
+private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    // Simple distance calculation
+    val latDiff = Math.abs(lat1 - lat2) * 111000 // approx meters per degree of latitude
+    val lonDiff = Math.abs(lon1 - lon2) * 111000 * Math.cos(Math.toRadians(lat1))
+    return Math.sqrt(latDiff * latDiff + lonDiff * lonDiff)
+}
+
+private fun getErrorHtml(errorMsg: String): String {
+    return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 20px; 
+                       background: #f0f0f0; color: #333; }
+                .error { color: #d32f2f; font-weight: bold; margin: 20px 0; }
+                .details { font-size: 14px; margin-bottom: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="error">Map loading failed</div>
+            <div class="details">$errorMsg</div>
+            <div>Check your internet connection and try again</div>
+        </body>
+        </html>
+    """.trimIndent()
+}
+
+private fun getMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
+    return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+                #map { width: 100%; height: 100%; background: #f0f0f0; }
+                .marker { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; 
+                          margin-left: -10px; margin-top: -20px; color: red; font-size: 24px; }
+            </style>
+        </head>
+        <body>
+            <div id="map">
+                <img src="https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lon&zoom=$zoom&size=400x400&markers=color:red%7C$lat,$lon" 
+                     width="100%" height="100%" alt="Map" ```kt
+rerror="this.onerror=null;this.src='error.png';"/>
+            </div>
+            <script>
+                // This is intentionally left blank.  The static map should load immediately.
+            </script>
+        </body>
+        </html>
+    """.trimIndent()
+}
+
+// Composable function for the main UI
+@Composable
+fun VideoRecorderApp(
+    locationManager: LocationManager,
+    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
+    onRecordButtonClick: () -> Unit
+) {
+    val context = LocalContext.current
     var recording by remember { mutableStateOf<Recording?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
     val executor = remember { ContextCompat.getMainExecutor(context) }
@@ -165,6 +435,11 @@ fun VideoRecorderApp(locationManager: LocationManager) {
     // UI state
     var showMap by remember { mutableStateOf(false) }
     var mapOpacity by remember { mutableFloatStateOf(0.5f) }
+    var isMapLoaded by remember { mutableStateOf(false) }
+    var mapLoadError by remember { mutableStateOf<String?>(null) }
+
+    // WebView State
+    val webView = remember { mutableStateOf<WebView?>(null) }
 
     // Update time every second
     LaunchedEffect(Unit) {
@@ -272,10 +547,9 @@ fun VideoRecorderApp(locationManager: LocationManager) {
         // Camera Preview
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
-            onVideoCaptureReady = { videoCapture = it }
+            onVideoCaptureReady = onVideoCaptureReady
         )
 
-        // OpenStreetMap overlay (conditionally shown)
         AnimatedVisibility(
             visible = showMap,
             enter = fadeIn(),
@@ -295,73 +569,107 @@ fun VideoRecorderApp(locationManager: LocationManager) {
             ) {
                 if (currentLocation != null) {
                     // Show map with location
-                    var isMapLoaded by remember { mutableStateOf(false) }
+                    val lat = currentLocation?.latitude ?: 0.0
+                    val lon = currentLocation?.longitude ?: 0.0
+                    val shouldUpdate = shouldUpdateMap(lat, lon)
 
                     AndroidView(
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                webView.value = this
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-                                    webViewClient = object : WebViewClient() {
+                                webViewClient = object : WebViewClient() {
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
                                         isMapLoaded = true
                                     }
-                                        // ADD THIS ERROR HANDLER:
-                                        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                                            super.onReceivedError(view, request, error)
-                                            view?.loadData("<html><body><h3>Map loading failed</h3><p>Check your internet connection</p></body></html>", "text/html", "UTF-8")
-                                        }
+
+                                    override fun onReceivedError(
+                                        view: WebView?,
+                                        request: WebResourceRequest?,
+                                        error: WebResourceError?
+                                    ) {
+                                        super.onReceivedError(view, request, error)
+                                        val errorMessage = error?.description?.toString() ?: "Unknown error"
+                                        mapLoadError = "Failed to load map: $errorMessage"
+                                        val errorHtml = getErrorHtml(errorMessage)
+                                        view?.loadDataWithBaseURL(
+                                            null,
+                                            errorHtml,
+                                            "text/html",
+                                            "UTF-8",
+                                            null
+                                        )
+                                    }
+
+                                    override fun onReceivedSslError(
+                                        view: WebView?,
+                                        handler: SslErrorHandler?,
+                                        error: SslError?
+                                    ) {
+                                        super.onReceivedSslError(view, handler, error)
+                                        val errorMessage = error?.toString() ?: "SSL Error"
+                                        mapLoadError = "SSL Error: $errorMessage"
+                                        val errorHtml = getErrorHtml(errorMessage)
+                                        view?.loadDataWithBaseURL(
+                                            null,
+                                            errorHtml,
+                                            "text/html",
+                                            "UTF-8",
+                                            null
+                                        )
+                                    }
                                 }
 
+                                loadDataWithBaseURL(
+                                    null,
+                                    getMapHtml(lat, lon),
+                                    "text/html",
+                                    "UTF-8",
+                                    null
+                                )
+                            }
+                        },
+                        update = { webView ->
+                            if (shouldUpdate && currentLocation != null) {
                                 val lat = currentLocation?.latitude ?: 0.0
                                 val lon = currentLocation?.longitude ?: 0.0
 
-                                if (isNetworkAvailable(ctx)) {
-                                    loadUrl(
-                                        "https://www.openstreetmap.org/export/embed.html" +
-                                                "?bbox=${lon - 0.005},${lat - 0.005}," +
-                                                "${lon + 0.005},${lat + 0.005}" +
-                                                "&layer=mapnik&marker=${lat},${lon}"
-                                    )
-                                } else {
-                                    loadData(
-                                        "<html><body><h3>No internet connection</h3></body></html>",
-                                        "text/html",
-                                        "UTF-8"
-                                    )
-                                }
+                                webView.loadDataWithBaseURL(
+                                    null,
+                                    getMapHtml(lat, lon),
+                                    "text/html",
+                                    "UTF-8",
+                                    null
+                                )
+                                isMapLoaded = false
+                                mapLoadError = null
                             }
-                        },
-                    update = { webView ->
-                        val lat = currentLocation?.latitude ?: 0.0
-                        val lon = currentLocation?.longitude ?: 0.0
-
-                            webView.loadUrl(
-                                "https://www.openstreetmap.org/export/embed.html" +
-                                        "?bbox=${lon - 0.005},${lat - 0.005}," +
-                                        "${lon + 0.005},${lat + 0.005}" +
-                                        "&layer=mapnik&marker=${lat},${lon}"
-                            )
                         },
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    LaunchedEffect(currentLocation) {
-                        while (true) {
-                            delay(3000)
-                        }
-                    }
-
                     // Show loading indicator
-                    if (!isMapLoaded) {
+                    if (!isMapLoaded && mapLoadError == null) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(color = Color.Blue)
+                        }
+                    } else if (mapLoadError != null) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Map loading failed: ${mapLoadError}",
+                                color = Color.Red,
+                                style = TextStyle(fontWeight = FontWeight.Bold)
+                            )
                         }
                     }
                 } else {
@@ -407,7 +715,6 @@ fun VideoRecorderApp(locationManager: LocationManager) {
             }
         }
 
-        // Geotag overlay with improved UI
         EnhancedGeotagOverlay(
             location = currentLocation,
             speed = currentSpeed,
@@ -432,6 +739,8 @@ fun VideoRecorderApp(locationManager: LocationManager) {
                     if (showMap) {
                         Toast.makeText(context, "Map overlay enabled", Toast.LENGTH_SHORT).show()
                     }
+                    isMapLoaded = false
+                    mapLoadError = null
                 },
                 modifier = Modifier
                     .size(56.dp)
@@ -451,18 +760,7 @@ fun VideoRecorderApp(locationManager: LocationManager) {
                     .size(72.dp)
                     .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
                     .border(2.dp, if (recording != null) Color.Red else Color.White, CircleShape)
-                    .clickable {
-                        if (recording != null) {
-                            recording?.stop()
-                            recording = null
-                        } else {
-                            recording = startRecording(
-                                context = context,
-                                videoCapture = videoCapture,
-                                executor = executor
-                            )
-                        }
-                    },
+                    .clickable(onClick = onRecordButtonClick),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
@@ -476,21 +774,21 @@ fun VideoRecorderApp(locationManager: LocationManager) {
             }
 
             // Settings button (placeholder for future functionality)
-            IconButton(
-                onClick = {
-                    Toast.makeText(context, "Settings (not implemented)", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
-            ) {
+//            IconButton(
+//                onClick = {
+//                    Toast.makeText(context, "Settings (not implemented)", Toast.LENGTH_SHORT).show()
+//                },
+//                modifier = Modifier
+//                    .size(56.dp)
+//                    .background(Color.DarkGray.copy(alpha = 0.7f), CircleShape)
+//            ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp)
+                    tint = Color.Transparent, // Color.White,
+                    modifier = Modifier.size(56.dp) //Modifier.size(32.dp)
                 )
-            }
+//            }
         }
     }
 }
@@ -744,72 +1042,3 @@ fun startRecording(
             }
         }
 }
-
-
-
-
-
-
-
-//Looking at the error message "ERR_NAME_NOT_RESOLVED" in the map overlay, this is a DNS resolution problem that typically occurs when a web request can't find the server address.
-//
-//The issue is likely happening because the WebView in your app is trying to load the OpenStreetMap URL, but the device doesn't have proper internet connectivity when using the WebView component specifically.
-//
-//Here's what might be causing the issue:
-//
-//1. **Missing Internet Permission**: While you do have the internet permission in your AndroidManifest.xml, make sure it's properly applied.
-//
-//2. **Network Connectivity**: The app might be running when the device has limited or no internet connectivity.
-//
-//3. **WebView Configuration**: The WebView might need additional configuration to handle network connections properly.
-//
-//To fix this issue, try these solutions:
-//
-//```kt
-//// In your WebView configuration, add these additional settings
-//webView.apply {
-//    settings.javaScriptEnabled = true
-//    settings.domStorageEnabled = true  // Enable DOM storage
-//    settings.cacheMode = WebSettings.LOAD_DEFAULT  // Use cache if possible
-//
-//    // Add a WebViewClient that handles errors
-//    webViewClient = object : WebViewClient() {
-//        override fun onPageFinished(view: WebView?, url: String?) {
-//            super.onPageFinished(view, url)
-//            isMapLoaded = true
-//        }
-//
-//        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-//            super.onReceivedError(view, request, error)
-//            // Show error message in the WebView
-//            view?.loadData("<html><body><h3>Map loading failed</h3><p>Check your internet connection</p></body></html>", "text/html", "UTF-8")
-//        }
-//    }
-//}
-//```
-//
-//Also, consider implementing a network connectivity check before attempting to load the map:
-//
-//```kt
-//// Add this function to check for internet connectivity
-//private fun isNetworkAvailable(context: Context): Boolean {
-//    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-//    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-//        val network = connectivityManager.activeNetwork ?: return false
-//        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-//        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-//    } else {
-//        val networkInfo = connectivityManager.activeNetworkInfo
-//        return networkInfo != null && networkInfo.isConnected
-//    }
-//}
-//
-//// Then use it before loading the map
-//if (isNetworkAvailable(context)) {
-//    webView.loadUrl("https://www.openstreetmap.org/export/embed.html?bbox=...")
-//} else {
-//    webView.loadData("<html><body><h3>No internet connection</h3></body></html>", "text/html", "UTF-8")
-//}
-//```
-//
-//Would you like me to explain how these changes work?
