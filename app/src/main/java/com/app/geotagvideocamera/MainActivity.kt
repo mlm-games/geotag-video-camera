@@ -683,7 +683,8 @@ fun VideoRecorderApp(
                                         "&width=240&height=150" +
                                         "&center=lonlat:${location.longitude},${location.latitude}" +
                                         "&zoom=14" +
-                                        "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium"
+                                        "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium&apiKey=PROVIDE_AFTER_FORKING"
+                                // Provide your own api key and it will work.
 
                                 Log.d("MapDebug", "Trying alternative map URL: $alternativeUrl")
 
