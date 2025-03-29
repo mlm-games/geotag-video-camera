@@ -90,8 +90,12 @@ import androidx.compose.ui.text.style.TextAlign
 import android.graphics.BitmapFactory
 import android.os.AsyncTask
 import android.widget.ImageView
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -374,56 +378,6 @@ private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Do
     return sqrt(latDiff * latDiff + lonDiff * lonDiff)
 }
 
-fun getDirectMapHtml(lat: Double, lon: Double, zoom: Int = 13): String {
-    val mapHtml = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style>
-                html, body, #map {
-                    width: 100%;
-                    height: 100%;
-                    margin: 0;
-                    padding: 0;
-                }
-            </style>
-        </head>
-        <body>
-            <div id="map"></div>
-            <script>
-                // Create map
-                var map = L.map('map', {
-                    center: [$lat, $lon],
-                    zoom: $zoom,
-                    zoomControl: false,
-                    attributionControl: false
-                });
-                
-                // Add CARTO basemap
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    subdomains: 'abcd'
-                }).addTo(map);
-                
-                // Add marker
-                L.marker([$lat, $lon]).addTo(map);
-                
-                // Log for debugging
-                console.log('Map initialized at $lat, $lon, zoom $zoom');
-            </script>
-        </body>
-        </html>
-    """.trimIndent()
-
-    // Add logcat output
-    Log.d("MapDebug", "Generated map HTML with zoom=$zoom for coordinates: $lat, $lon")
-    return mapHtml
-}
-
 @Composable
 fun VideoRecorderApp(
     locationManager: LocationManager,
@@ -451,7 +405,6 @@ fun VideoRecorderApp(
     LaunchedEffect(Unit) {
         val initialLat = 0.0
         val initialLon = 0.0
-        mapHtml = getDirectMapHtml(initialLat, initialLon)
     }
 
     // Update time every second
@@ -470,8 +423,6 @@ fun VideoRecorderApp(
                 currentSpeed = location.speed * 3.6f // Convert m/s to km/h
                 gpsStatus =
                     if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
-
-                mapHtml = getDirectMapHtml(location.latitude, location.longitude)
             }
 
             override fun onProviderEnabled(provider: String) {
@@ -621,10 +572,7 @@ fun VideoRecorderApp(
             }
         }
 
-        fun getDirectMapUrl(lat: Double, lon: Double, zoom: Int = 15): String {
-            // Direct link to CARTO basemaps with the given coordinates
-            return "https://basemaps.cartocdn.com/#$zoom/$lat/$lon"
-        }
+
 
         // Map overlay at bottom center
         Box(
@@ -640,60 +588,55 @@ fun VideoRecorderApp(
             val location = currentLocation
 
             if (location != null) {
-                // Adjust zoom level (lower number = less zoomed in)
-                val mapZoom = 13
-
-                // Generate static map URL from CARTO
-                val staticMapUrl = "https://cartocdn-gusc.global.ssl.fastly.net/ramiroaznar/api/v1/map/static/center/" +
-                        "${location.longitude},${location.latitude}/$mapZoom/240/150.png"
-
-                // Log the URL for debugging
-                Log.d("MapDebug", "Loading static map from URL: $staticMapUrl")
-
                 // Address state
                 var address by remember { mutableStateOf("Loading address...") }
 
-
-
-                // Get address from location
+                // Get address from location with postal code
                 LaunchedEffect(location) {
                     try {
-                        // Use Geocoder to get address (this runs on the main thread, could be moved to a background thread)
-                        val geocoder = android.location.Geocoder(context, Locale.getDefault())
+                        withContext(Dispatchers.IO) {
+                            val geocoder = android.location.Geocoder(context, Locale.getDefault())
 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            // Use the new API for Android 13+
-                            geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
-                                if (addresses.isNotEmpty()) {
-                                    // Get the first address
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                // Use the new API for Android 13+
+                                geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
+                                    if (addresses.isNotEmpty()) {
+                                        val firstAddress = addresses[0]
+                                        // Include postal code and all available address components
+                                        address = listOfNotNull(
+                                            firstAddress.featureName,
+                                            firstAddress.thoroughfare,
+                                            firstAddress.subLocality,
+                                            firstAddress.locality,
+                                            firstAddress.postalCode,
+                                            firstAddress.adminArea
+                                        ).joinToString(", ")
+
+                                        Log.d("MapDebug", "Full address: $address")
+                                    } else {
+                                        address = "Unknown location"
+                                    }
+                                }
+                            } else {
+                                // Use the deprecated API for older Android versions
+                                @Suppress("DEPRECATION")
+                                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                                if (addresses != null && addresses.isNotEmpty()) {
                                     val firstAddress = addresses[0]
-                                    // Format address: thoroughfare (street), locality (city), adminArea (state/province)
+                                    // Include postal code and all available address components
                                     address = listOfNotNull(
+                                        firstAddress.featureName,
                                         firstAddress.thoroughfare,
+                                        firstAddress.subLocality,
                                         firstAddress.locality,
-                                        firstAddress.adminArea,
-                                        firstAddress.subAdminArea,
                                         firstAddress.postalCode,
+                                        firstAddress.adminArea
                                     ).joinToString(", ")
+
+                                    Log.d("MapDebug", "Full address: $address")
                                 } else {
                                     address = "Unknown location"
                                 }
-                            }
-                        } else {
-                            // Use the deprecated API for older Android versions
-                            @Suppress("DEPRECATION")
-                            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                            if (addresses != null && addresses.isNotEmpty()) {
-                                // Get the first address
-                                val firstAddress = addresses[0]
-                                // Format address: thoroughfare (street), locality (city), adminArea (state/province)
-                                address = listOfNotNull(
-                                    firstAddress.thoroughfare,
-                                    firstAddress.locality,
-                                    firstAddress.adminArea
-                                ).joinToString(", ")
-                            } else {
-                                address = "Unknown location"
                             }
                         }
                     } catch (e: Exception) {
@@ -702,74 +645,74 @@ fun VideoRecorderApp(
                     }
                 }
 
+                // Use exactly the same format URL that works in the logs
+                val zoomLevel = 0.01 // Controls how zoomed out the map is
+                val bbox = "${location.longitude-zoomLevel},${location.latitude-zoomLevel},${location.longitude+zoomLevel},${location.latitude+zoomLevel}"
+                val mapUrl = "https://www.openstreetmap.org/export/embed.html?bbox=$bbox&layer=mapnik"
 
-                // Static map image
+                Log.d("MapDebug", "Using OSM URL: $mapUrl")
+
+                // Simple WebView implementation
                 AndroidView(
                     factory = { context ->
-                        ImageView(context).apply {
-                            scaleType = ImageView.ScaleType.CENTER_CROP
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
 
-                            // Use a library like Glide or Coil to load the image
-                            // For simplicity, let's use a basic solution
-                            val task = object : AsyncTask<String, Void, Bitmap?>() {
-                                override fun doInBackground(vararg params: String): Bitmap? {
-                                    try {
-                                        val url = URL(params[0])
-                                        val connection = url.openConnection() as HttpURLConnection
-                                        connection.doInput = true
-                                        connection.connect()
-                                        val input = connection.inputStream
-                                        return BitmapFactory.decodeStream(input)
-                                    } catch (e: Exception) {
-                                        Log.e("MapImage", "Error loading map image", e)
-                                        return null
-                                    }
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                                    Log.d("MapDebug", "WebView loading started: $url")
                                 }
 
-                                override fun onPostExecute(result: Bitmap?) {
-                                    if (result != null) {
-                                        setImageBitmap(result)
-                                    } else {
-                                        // Set a placeholder if image loading fails
-                                        setBackgroundColor(Color.LightGray.toArgb())
-                                        setImageResource(R.drawable.ic_dialog_map)
-                                    }
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    Log.d("MapDebug", "WebView loading finished: $url")
+                                }
+
+                                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                                    Log.e("MapDebug", "WebView error: ${error.description}")
                                 }
                             }
 
-                            task.execute(staticMapUrl)
+                            // Load the URL that's known to work
+                            loadUrl(mapUrl)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Address and coordinates overlay
-                Column(
+                // Address display at top of map
+                Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .align(Alignment.TopCenter)
                         .background(Color.Black.copy(alpha = 0.7f))
                         .padding(4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Address
                     Text(
                         text = address,
                         color = Color.White,
                         fontSize = 10.sp,
                         textAlign = TextAlign.Center,
-                        maxLines = 3,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
 
-                    // Coordinates
+                // Coordinates display at bottom of map
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
                         text = String.format("%.6f°, %.6f°", location.latitude, location.longitude),
                         color = Color.White,
                         fontSize = 10.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
