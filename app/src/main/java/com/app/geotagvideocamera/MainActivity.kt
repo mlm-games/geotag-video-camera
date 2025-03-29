@@ -374,8 +374,8 @@ private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Do
     return sqrt(latDiff * latDiff + lonDiff * lonDiff)
 }
 
-fun getDirectMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
-    return """
+fun getDirectMapHtml(lat: Double, lon: Double, zoom: Int = 13): String {
+    val mapHtml = """
         <!DOCTYPE html>
         <html>
         <head>
@@ -418,6 +418,10 @@ fun getDirectMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
         </body>
         </html>
     """.trimIndent()
+
+    // Add logcat output
+    Log.d("MapDebug", "Generated map HTML with zoom=$zoom for coordinates: $lat, $lon")
+    return mapHtml
 }
 
 @Composable
@@ -636,12 +640,20 @@ fun VideoRecorderApp(
             val location = currentLocation
 
             if (location != null) {
+                // Adjust zoom level (lower number = less zoomed in)
+                val mapZoom = 13
+
                 // Generate static map URL from CARTO
                 val staticMapUrl = "https://cartocdn-gusc.global.ssl.fastly.net/ramiroaznar/api/v1/map/static/center/" +
-                        "${location.longitude},${location.latitude}/15/240/150.png"
+                        "${location.longitude},${location.latitude}/$mapZoom/240/150.png"
+
+                // Log the URL for debugging
+                Log.d("MapDebug", "Loading static map from URL: $staticMapUrl")
 
                 // Address state
                 var address by remember { mutableStateOf("Loading address...") }
+
+
 
                 // Get address from location
                 LaunchedEffect(location) {
@@ -659,7 +671,9 @@ fun VideoRecorderApp(
                                     address = listOfNotNull(
                                         firstAddress.thoroughfare,
                                         firstAddress.locality,
-                                        firstAddress.adminArea
+                                        firstAddress.adminArea,
+                                        firstAddress.subAdminArea,
+                                        firstAddress.postalCode,
                                     ).joinToString(", ")
                                 } else {
                                     address = "Unknown location"
@@ -687,6 +701,7 @@ fun VideoRecorderApp(
                         address = "Address lookup failed"
                     }
                 }
+
 
                 // Static map image
                 AndroidView(
@@ -743,7 +758,7 @@ fun VideoRecorderApp(
                         color = Color.White,
                         fontSize = 10.sp,
                         textAlign = TextAlign.Center,
-                        maxLines = 1,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
