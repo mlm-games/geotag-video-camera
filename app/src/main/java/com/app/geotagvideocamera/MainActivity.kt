@@ -590,6 +590,7 @@ fun VideoRecorderApp(
             if (location != null) {
                 // Address state
                 var address by remember { mutableStateOf("Loading address...") }
+                var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
                 // Get address from location with postal code
                 LaunchedEffect(location) {
@@ -645,39 +646,86 @@ fun VideoRecorderApp(
                     }
                 }
 
-                // Use exactly the same format URL that works in the logs
-                val zoomLevel = 0.01 // Controls how zoomed out the map is
-                val bbox = "${location.longitude-zoomLevel},${location.latitude-zoomLevel},${location.longitude+zoomLevel},${location.latitude+zoomLevel}"
-                val mapUrl = "https://www.openstreetmap.org/export/embed.html?bbox=$bbox&layer=mapnik"
+                // Load map image using coroutines
+                LaunchedEffect(location) {
+                    // Use OSM static map API
+                    val staticMapUrl = "https://staticmap.openstreetmap.de/staticmap.php" +
+                            "?center=${location.latitude},${location.longitude}" +
+                            "&zoom=14" +  // Adjust zoom level as needed
+                            "&size=240x150" +
+                            "&markers=${location.latitude},${location.longitude},red-pushpin"
 
-                Log.d("MapDebug", "Using OSM URL: $mapUrl")
+                    Log.d("MapDebug", "Loading static map from URL: $staticMapUrl")
 
-                // Simple WebView implementation
-                AndroidView(
-                    factory = { context ->
-                        WebView(context).apply {
-                            settings.javaScriptEnabled = true
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val url = URL(staticMapUrl)
+                            val connection = url.openConnection() as HttpURLConnection
+                            connection.doInput = true
+                            connection.connect()
+                            val input = connection.inputStream
+                            mapBitmap = BitmapFactory.decodeStream(input)
 
-                            webViewClient = object : WebViewClient() {
-                                override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                                    Log.d("MapDebug", "WebView loading started: $url")
-                                }
+                            if (mapBitmap != null) {
+                                Log.d("MapDebug", "Successfully loaded map image, size: ${mapBitmap!!.width}x${mapBitmap!!.height}")
+                            } else {
+                                Log.e("MapDebug", "Failed to decode bitmap from stream")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MapDebug", "Error loading map image: ${e.message}", e)
 
-                                override fun onPageFinished(view: WebView, url: String) {
-                                    Log.d("MapDebug", "WebView loading finished: $url")
-                                }
+                        // Try alternative map provider if the first one fails
+                        try {
+                            withContext(Dispatchers.IO) {
+                                val alternativeUrl = "https://maps.geoapify.com/v1/staticmap" +
+                                        "?style=osm-carto" +
+                                        "&width=240&height=150" +
+                                        "&center=lonlat:${location.longitude},${location.latitude}" +
+                                        "&zoom=14" +
+                                        "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium"
 
-                                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                                    Log.e("MapDebug", "WebView error: ${error.description}")
+                                Log.d("MapDebug", "Trying alternative map URL: $alternativeUrl")
+
+                                val url = URL(alternativeUrl)
+                                val connection = url.openConnection() as HttpURLConnection
+                                connection.doInput = true
+                                connection.connect()
+                                val input = connection.inputStream
+                                mapBitmap = BitmapFactory.decodeStream(input)
+
+                                if (mapBitmap != null) {
+                                    Log.d("MapDebug", "Successfully loaded alternative map image")
+                                } else {
+                                    Log.e("MapDebug", "Failed to decode alternative bitmap from stream")
                                 }
                             }
-
-                            // Load the URL that's known to work
-                            loadUrl(mapUrl)
+                        } catch (e: Exception) {
+                            Log.e("MapDebug", "Error loading alternative map image: ${e.message}", e)
                         }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                    }
+                }
+
+                // Display map image if loaded
+                if (mapBitmap != null) {
+                    Image(
+                        bitmap = mapBitmap!!.asImageBitmap(),
+                        contentDescription = "Map of current location",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Show loading indicator if map image is not yet loaded
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Loading map...",
+                            color = Color.Gray
+                        )
+                    }
+                }
 
                 // Address display at top of map
                 Box(
@@ -693,7 +741,7 @@ fun VideoRecorderApp(
                         color = Color.White,
                         fontSize = 10.sp,
                         textAlign = TextAlign.Center,
-                        maxLines = 1,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
