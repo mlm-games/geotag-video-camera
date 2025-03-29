@@ -372,7 +372,7 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             <style>
-                body, html { margin: 0; padding: 0; height: 100%; width: 100%; }
+                body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
                 #map { width: 100%; height: 100%; background: #e0e0e0; }
                 #debug { position: absolute; bottom: 0; left: 0; background: rgba(0,0,0,0.7); color: white; padding: 4px; 
                           font-size: 10px; z-index: 1000; max-width: 100%; overflow: hidden; }
@@ -391,17 +391,23 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
                 
                 log("Script started");
                 
+                // Define the map variables globally
+                var map, osmLayer;
+                var mapZoom = $zoom;
+                var mapLat = $lat;
+                var mapLon = $lon;
+                
                 // Load Leaflet dynamically
                 function loadScript(url, callback) {
                     var script = document.createElement('script');
                     script.type = 'text/javascript';
                     script.src = url;
                     script.onload = function() {
-                        log("Loaded: " + url);
+                        log("Loaded script: " + url);
                         callback();
                     };
                     script.onerror = function() {
-                        log("Error loading: " + url);
+                        log("Error loading script: " + url);
                     };
                     document.head.appendChild(script);
                 }
@@ -425,72 +431,51 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
                 // Then load JS
                 loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', function() {
                     log("Initializing map");
+                    
                     try {
                         // Initialize map
-                        var map = L.map('map', {
-                            zoomControl: true,
-                            attributionControl: true
-                        }).setView([${lat}, ${lon}], ${zoom});
+                        map = L.map('map', {
+                            zoomControl: false,
+                            attributionControl: false
+                        }).setView([mapLat, mapLon], mapZoom);
                         
-                        log("Map initialized");
+                        log("Map object created");
                         
-                        // Try different tile providers
+                        // Log an example tile URL
+                        var exampleUrl = 'https://a.tile.openstreetmap.org/' + mapZoom + '/0/0.png';
+                        log("Example tile URL: " + exampleUrl);
                         
-                        // 1. OpenStreetMap
-                        var osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-                        log("OSM URL example: " + osmUrl.replace('{s}', 'a').replace('{z}', zoom).replace('{x}', '0').replace('{y}', '0'));
-                        var osm = L.tileLayer(osmUrl, {
+                        // Add OpenStreetMap tile layer
+                        osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                             maxZoom: 19,
-                            attribution: '&copy; OpenStreetMap'
-                        });
-                        
-                        // 2. Stamen
-                        var stamenUrl = 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.png';
-                        log("Stamen URL example: " + stamenUrl.replace('{s}', 'a').replace('{z}', zoom).replace('{x}', '0').replace('{y}', '0'));
-                        var stamen = L.tileLayer(stamenUrl, {
-                            maxZoom: 18,
-                            attribution: 'Map tiles by Stamen Design'
-                        });
-                        
-                        // 3. Carto
-                        var cartoUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-                        log("Carto URL example: " + cartoUrl.replace('{s}', 'a').replace('{z}', zoom).replace('{x}', '0').replace('{y}', '0'));
-                        var carto = L.tileLayer(cartoUrl, {
-                            maxZoom: 19,
-                            attribution: '&copy; CARTO'
-                        });
-                        
-                        // Add the Carto tiles by default (often more reliable)
-                        carto.addTo(map);
+                            subdomains: ['a', 'b', 'c']
+                        }).addTo(map);
                         
                         log("Tile layer added");
                         
                         // Add a marker
-                        L.marker([${lat}, ${lon}]).addTo(map);
+                        L.marker([mapLat, mapLon]).addTo(map);
                         
                         log("Marker added");
                         
-                        // Create a layer control to switch between tile providers
-                        var baseMaps = {
-                            "OpenStreetMap": osm,
-                            "Stamen Terrain": stamen,
-                            "Carto Light": carto
-                        };
-                        L.control.layers(baseMaps).addTo(map);
-                        
                         // Force resize
                         setTimeout(function() {
-                            map.invalidateSize();
+                            map.invalidateSize(true);
                             log("Map resized");
                             
-                            // Try to fetch a tile directly to see if it works
-                            var img = new Image();
-                            img.onload = function() { log("Test tile loaded successfully"); };
-                            img.onerror = function() { log("Test tile failed to load"); };
-                            img.src = cartoUrl.replace('{s}', 'a').replace('{z}', zoom).replace('{x}', '0').replace('{y}', '0');
+                            // Check if tiles are loading
+                            var tileCount = document.querySelectorAll('.leaflet-tile').length;
+                            log("Tile elements found: " + tileCount);
+                            
+                            // Try to fetch a test tile
+                            var testImg = new Image();
+                            testImg.onload = function() { log("Test tile loaded successfully"); };
+                            testImg.onerror = function() { log("Test tile failed to load"); };
+                            testImg.src = exampleUrl;
                         }, 500);
                     } catch (e) {
-                        log("Error: " + e.message);
+                        log("Error initializing map: " + e.message);
+                        log("Stack: " + e.stack);
                     }
                 });
             </script>
