@@ -392,7 +392,7 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
                 log("Script started");
                 
                 // Define the map variables globally
-                var map, osmLayer;
+                var map, cartoLayer;
                 var mapZoom = $zoom;
                 var mapLat = $lat;
                 var mapLon = $lon;
@@ -425,6 +425,14 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
                     document.head.appendChild(link);
                 }
                 
+                // Calculate tile coordinates from lat/lon
+                function getTileNumber(lat, lon, zoom) {
+                    var xtile = parseInt(Math.floor((lon + 180) / 360 * Math.pow(2, zoom)));
+                    var ytile = parseInt(Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 
+                                     1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)));
+                    return {x: xtile, y: ytile};
+                }
+                
                 // First load CSS
                 loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
                 
@@ -441,20 +449,32 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
                         
                         log("Map object created");
                         
-                        // Log an example tile URL
-                        var exampleUrl = 'https://a.tile.openstreetmap.org/' + mapZoom + '/0/0.png';
-                        log("Example tile URL: " + exampleUrl);
+                        // CARTO Basemap URL
+                        var cartoPositron = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
                         
-                        // Add OpenStreetMap tile layer
-                        osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        // Calculate the tile coordinates for the current location
+                        var tileCoords = getTileNumber(mapLat, mapLon, mapZoom);
+                        
+                        // Generate actual tile URL for current location
+                        var currentTileUrl = cartoPositron
+                            .replace('{s}', 'a')
+                            .replace('{z}', mapZoom)
+                            .replace('{x}', tileCoords.x)
+                            .replace('{y}', tileCoords.y)
+                            .replace('{r}', '');
+                        
+                        log("Current location tile URL: " + currentTileUrl);
+                        
+                        // Add CARTO Positron (light) tile layer as default
+                        cartoLayer = L.tileLayer(cartoPositron, {
                             maxZoom: 19,
-                            subdomains: ['a', 'b', 'c']
+                            subdomains: 'abcd'
                         }).addTo(map);
                         
-                        log("Tile layer added");
+                        log("CARTO tile layer added");
                         
                         // Add a marker
-                        L.marker([mapLat, mapLon]).addTo(map);
+                        var marker = L.marker([mapLat, mapLon]).addTo(map);
                         
                         log("Marker added");
                         
@@ -467,11 +487,23 @@ fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
                             var tileCount = document.querySelectorAll('.leaflet-tile').length;
                             log("Tile elements found: " + tileCount);
                             
-                            // Try to fetch a test tile
+                            // Log the center tile again after map is fully initialized
+                            var center = map.getCenter();
+                            var updatedTileCoords = getTileNumber(center.lat, center.lng, map.getZoom());
+                            var updatedTileUrl = cartoPositron
+                                .replace('{s}', 'a')
+                                .replace('{z}', map.getZoom())
+                                .replace('{x}', updatedTileCoords.x)
+                                .replace('{y}', updatedTileCoords.y)
+                                .replace('{r}', '');
+                            
+                            log("Center tile URL: " + updatedTileUrl);
+                            
+                            // Try to fetch the actual tile
                             var testImg = new Image();
-                            testImg.onload = function() { log("Test tile loaded successfully"); };
-                            testImg.onerror = function() { log("Test tile failed to load"); };
-                            testImg.src = exampleUrl;
+                            testImg.onload = function() { log("Tile loaded successfully"); };
+                            testImg.onerror = function() { log("Tile failed to load"); };
+                            testImg.src = updatedTileUrl;
                         }, 500);
                     } catch (e) {
                         log("Error initializing map: " + e.message);
