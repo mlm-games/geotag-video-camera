@@ -1,6 +1,7 @@
 package com.app.geotagvideocamera
 
 import android.Manifest
+import android.R
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -23,6 +24,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -84,6 +86,14 @@ import kotlin.math.cos
 import kotlin.math.sqrt
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceError
+import androidx.compose.ui.text.style.TextAlign
+import android.graphics.BitmapFactory
+import android.os.AsyncTask
+import android.widget.ImageView
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.style.TextOverflow
+import java.net.HttpURLConnection
+import java.net.URL
 
 
 class MainActivity : ComponentActivity() {
@@ -364,152 +374,46 @@ private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Do
     return sqrt(latDiff * latDiff + lonDiff * lonDiff)
 }
 
-fun getLeafletMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
+fun getDirectMapHtml(lat: Double, lon: Double, zoom: Int = 15): String {
     return """
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
-                body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
-                #map { width: 100%; height: 100%; background: #e0e0e0; }
-                #debug { position: absolute; bottom: 0; left: 0; background: rgba(0,0,0,0.7); color: white; padding: 4px; 
-                          font-size: 10px; z-index: 1000; max-width: 100%; overflow: hidden; }
+                html, body, #map {
+                    width: 100%;
+                    height: 100%;
+                    margin: 0;
+                    padding: 0;
+                }
             </style>
         </head>
         <body>
-            <div id="debug">Loading map...</div>
             <div id="map"></div>
-            
             <script>
-                // Log function to display messages in the debug div
-                function log(msg) {
-                    document.getElementById('debug').innerHTML += "<br>" + msg;
-                    console.log(msg);
-                }
-                
-                log("Script started");
-                
-                // Define the map variables globally
-                var map, cartoLayer;
-                var mapZoom = $zoom;
-                var mapLat = $lat;
-                var mapLon = $lon;
-                
-                // Load Leaflet dynamically
-                function loadScript(url, callback) {
-                    var script = document.createElement('script');
-                    script.type = 'text/javascript';
-                    script.src = url;
-                    script.onload = function() {
-                        log("Loaded script: " + url);
-                        callback();
-                    };
-                    script.onerror = function() {
-                        log("Error loading script: " + url);
-                    };
-                    document.head.appendChild(script);
-                }
-                
-                function loadCSS(url) {
-                    var link = document.createElement('link');
-                    link.rel = 'stylesheet';
-                    link.href = url;
-                    link.onload = function() {
-                        log("Loaded CSS: " + url);
-                    };
-                    link.onerror = function() {
-                        log("Error loading CSS: " + url);
-                    };
-                    document.head.appendChild(link);
-                }
-                
-                // Calculate tile coordinates from lat/lon
-                function getTileNumber(lat, lon, zoom) {
-                    var xtile = parseInt(Math.floor((lon + 180) / 360 * Math.pow(2, zoom)));
-                    var ytile = parseInt(Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 
-                                     1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)));
-                    return {x: xtile, y: ytile};
-                }
-                
-                // First load CSS
-                loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
-                
-                // Then load JS
-                loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', function() {
-                    log("Initializing map");
-                    
-                    try {
-                        // Initialize map
-                        map = L.map('map', {
-                            zoomControl: false,
-                            attributionControl: false
-                        }).setView([mapLat, mapLon], mapZoom);
-                        
-                        log("Map object created");
-                        
-                        // CARTO Basemap URL
-                        var cartoPositron = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-                        
-                        // Calculate the tile coordinates for the current location
-                        var tileCoords = getTileNumber(mapLat, mapLon, mapZoom);
-                        
-                        // Generate actual tile URL for current location
-                        var currentTileUrl = cartoPositron
-                            .replace('{s}', 'a')
-                            .replace('{z}', mapZoom)
-                            .replace('{x}', tileCoords.x)
-                            .replace('{y}', tileCoords.y)
-                            .replace('{r}', '');
-                        
-                        log("Current location tile URL: " + currentTileUrl);
-                        
-                        // Add CARTO Positron (light) tile layer as default
-                        cartoLayer = L.tileLayer(cartoPositron, {
-                            maxZoom: 19,
-                            subdomains: 'abcd'
-                        }).addTo(map);
-                        
-                        log("CARTO tile layer added");
-                        
-                        // Add a marker
-                        var marker = L.marker([mapLat, mapLon]).addTo(map);
-                        
-                        log("Marker added");
-                        
-                        // Force resize
-                        setTimeout(function() {
-                            map.invalidateSize(true);
-                            log("Map resized");
-                            
-                            // Check if tiles are loading
-                            var tileCount = document.querySelectorAll('.leaflet-tile').length;
-                            log("Tile elements found: " + tileCount);
-                            
-                            // Log the center tile again after map is fully initialized
-                            var center = map.getCenter();
-                            var updatedTileCoords = getTileNumber(center.lat, center.lng, map.getZoom());
-                            var updatedTileUrl = cartoPositron
-                                .replace('{s}', 'a')
-                                .replace('{z}', map.getZoom())
-                                .replace('{x}', updatedTileCoords.x)
-                                .replace('{y}', updatedTileCoords.y)
-                                .replace('{r}', '');
-                            
-                            log("Center tile URL: " + updatedTileUrl);
-                            
-                            // Try to fetch the actual tile
-                            var testImg = new Image();
-                            testImg.onload = function() { log("Tile loaded successfully"); };
-                            testImg.onerror = function() { log("Tile failed to load"); };
-                            testImg.src = updatedTileUrl;
-                        }, 500);
-                    } catch (e) {
-                        log("Error initializing map: " + e.message);
-                        log("Stack: " + e.stack);
-                    }
+                // Create map
+                var map = L.map('map', {
+                    center: [$lat, $lon],
+                    zoom: $zoom,
+                    zoomControl: false,
+                    attributionControl: false
                 });
+                
+                // Add CARTO basemap
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    subdomains: 'abcd'
+                }).addTo(map);
+                
+                // Add marker
+                L.marker([$lat, $lon]).addTo(map);
+                
+                // Log for debugging
+                console.log('Map initialized at $lat, $lon, zoom $zoom');
             </script>
         </body>
         </html>
@@ -534,7 +438,7 @@ fun VideoRecorderApp(
     var gpsStatus by remember { mutableStateOf("Searching...") }
 
     // WebView state
-    var leafletMapHtml by remember { mutableStateOf("") }
+    var mapHtml by remember { mutableStateOf("") }
 
 // Dialog state
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -543,7 +447,7 @@ fun VideoRecorderApp(
     LaunchedEffect(Unit) {
         val initialLat = 0.0
         val initialLon = 0.0
-        leafletMapHtml = getLeafletMapHtml(initialLat, initialLon)
+        mapHtml = getDirectMapHtml(initialLat, initialLon)
     }
 
     // Update time every second
@@ -563,8 +467,7 @@ fun VideoRecorderApp(
                 gpsStatus =
                     if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
 
-                // Update Leaflet Map HTML with the new location
-                leafletMapHtml = getLeafletMapHtml(location.latitude, location.longitude)
+                mapHtml = getDirectMapHtml(location.latitude, location.longitude)
             }
 
             override fun onProviderEnabled(provider: String) {
@@ -714,6 +617,11 @@ fun VideoRecorderApp(
             }
         }
 
+        fun getDirectMapUrl(lat: Double, lon: Double, zoom: Int = 15): String {
+            // Direct link to CARTO basemaps with the given coordinates
+            return "https://basemaps.cartocdn.com/#$zoom/$lat/$lon"
+        }
+
         // Map overlay at bottom center
         Box(
             modifier = Modifier
@@ -723,122 +631,142 @@ fun VideoRecorderApp(
                 .padding(bottom = 24.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                .background(Color(0xFFE8E8E8))
         ) {
-            AndroidView(
-                factory = { context ->
-                    WebView(context).apply {
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            databaseEnabled = true
-                            loadsImagesAutomatically = true
-                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            cacheMode = WebSettings.LOAD_DEFAULT  // Changed to use cache
-                            setGeolocationEnabled(true)
+            val location = currentLocation
 
-                            // Add these settings to ensure proper rendering
-                            useWideViewPort = true
-                            loadWithOverviewMode = true
-                            defaultTextEncodingName = "utf-8"
+            if (location != null) {
+                // Generate static map URL from CARTO
+                val staticMapUrl = "https://cartocdn-gusc.global.ssl.fastly.net/ramiroaznar/api/v1/map/static/center/" +
+                        "${location.longitude},${location.latitude}/15/240/150.png"
 
-                            // Allow network loading
-                            blockNetworkImage = false
-                            blockNetworkLoads = false
-                        }
+                // Address state
+                var address by remember { mutableStateOf("Loading address...") }
 
-                        // Add a WebChromeClient to handle console messages for debugging
-                        webChromeClient = object : WebChromeClient() {
-                            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                                Log.d("WebView", "${message.message()} -- From line ${message.lineNumber()} of ${message.sourceId()}")
-                                return true
-                            }
-                        }
+                // Get address from location
+                LaunchedEffect(location) {
+                    try {
+                        // Use Geocoder to get address (this runs on the main thread, could be moved to a background thread)
+                        val geocoder = android.location.Geocoder(context, Locale.getDefault())
 
-                        webViewClient = object : WebViewClient() {
-                            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                super.onPageStarted(view, url, favicon)
-                                Log.d("WebView", "Page started loading: $url")
-                            }
-
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                Log.d("WebView", "Page finished loading: $url")
-                            }
-
-                            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                                super.onReceivedError(view, request, error)
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                    Log.e("WebView", "Error loading ${request?.url}: ${error?.errorCode} ${error?.description}")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            // Use the new API for Android 13+
+                            geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
+                                if (addresses.isNotEmpty()) {
+                                    // Get the first address
+                                    val firstAddress = addresses[0]
+                                    // Format address: thoroughfare (street), locality (city), adminArea (state/province)
+                                    address = listOfNotNull(
+                                        firstAddress.thoroughfare,
+                                        firstAddress.locality,
+                                        firstAddress.adminArea
+                                    ).joinToString(", ")
                                 } else {
-                                    Log.e("WebView", "Error loading resource")
+                                    address = "Unknown location"
                                 }
                             }
+                        } else {
+                            // Use the deprecated API for older Android versions
+                            @Suppress("DEPRECATION")
+                            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                            if (addresses != null && addresses.isNotEmpty()) {
+                                // Get the first address
+                                val firstAddress = addresses[0]
+                                // Format address: thoroughfare (street), locality (city), adminArea (state/province)
+                                address = listOfNotNull(
+                                    firstAddress.thoroughfare,
+                                    firstAddress.locality,
+                                    firstAddress.adminArea
+                                ).joinToString(", ")
+                            } else {
+                                address = "Unknown location"
+                            }
                         }
-
-                        // Set a background color
-                        setBackgroundColor(android.graphics.Color.rgb(224, 224, 224))
-
-                        // Load the map data
-                        loadDataWithBaseURL(
-                            "https://openstreetmap.org/",
-                            leafletMapHtml,
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
+                    } catch (e: Exception) {
+                        Log.e("Geocoder", "Error getting address", e)
+                        address = "Address lookup failed"
                     }
-                },
-                update = { webView ->
-                    webView.loadDataWithBaseURL(
-                        "https://openstreetmap.org/",
-                        leafletMapHtml,
-                        "text/html",
-                        "UTF-8",
-                        null
-                    )
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+                }
 
-        // Location coordinates display just above the map
-        currentLocation?.let {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 180.dp) // Adjusted for smaller map
-                    .align(Alignment.BottomCenter)
-            ) {
+                // Static map image
+                AndroidView(
+                    factory = { context ->
+                        ImageView(context).apply {
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+
+                            // Use a library like Glide or Coil to load the image
+                            // For simplicity, let's use a basic solution
+                            val task = object : AsyncTask<String, Void, Bitmap?>() {
+                                override fun doInBackground(vararg params: String): Bitmap? {
+                                    try {
+                                        val url = URL(params[0])
+                                        val connection = url.openConnection() as HttpURLConnection
+                                        connection.doInput = true
+                                        connection.connect()
+                                        val input = connection.inputStream
+                                        return BitmapFactory.decodeStream(input)
+                                    } catch (e: Exception) {
+                                        Log.e("MapImage", "Error loading map image", e)
+                                        return null
+                                    }
+                                }
+
+                                override fun onPostExecute(result: Bitmap?) {
+                                    if (result != null) {
+                                        setImageBitmap(result)
+                                    } else {
+                                        // Set a placeholder if image loading fails
+                                        setBackgroundColor(Color.LightGray.toArgb())
+                                        setImageResource(R.drawable.ic_dialog_map)
+                                    }
+                                }
+                            }
+
+                            task.execute(staticMapUrl)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Address and coordinates overlay
                 Column(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Address
                     Text(
-                        text = String.format("%.6f°, %.6f°", it.latitude, it.longitude),
+                        text = address,
                         color = Color.White,
-                        style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        Text(
-                            text = String.format("Alt: %.1f m", it.altitude),
-                            color = Color.White,
-                            style = TextStyle(fontSize = 12.sp)
-                        )
-
-                        Text(
-                            text = String.format("Speed: %.1f km/h", currentSpeed),
-                            color = Color.White,
-                            style = TextStyle(fontSize = 12.sp)
-                        )
-                    }
+                    // Coordinates
+                    Text(
+                        text = String.format("%.6f°, %.6f°", location.latitude, location.longitude),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                // Show waiting for location
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Waiting for location...",
+                        color = Color.Gray
+                    )
                 }
             }
         }
