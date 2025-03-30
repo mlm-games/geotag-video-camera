@@ -1,0 +1,1 @@
+Camera with a map and coordinates overlay.
