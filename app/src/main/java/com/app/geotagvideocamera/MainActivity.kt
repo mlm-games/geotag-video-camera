@@ -1,69 +1,78 @@
 package com.app.geotagvideocamera
 
 import android.Manifest
-import android.R
-import android.content.ContentValues
+import android.app.AlertDialog
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.media.MediaRecorder
-import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Looper
-import android.provider.MediaStore
+import android.text.InputType
 import android.util.DisplayMetrics
 import android.util.Log
-import android.view.View
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.*
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,50 +87,31 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.sqrt
 
 class MainActivity : ComponentActivity() {
-
     private lateinit var locationManager: LocationManager
     private var mediaProjectionManager: MediaProjectionManager? = null
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var mediaRecorder: MediaRecorder? = null
-    private var isRecordingScreen = false
     private var screenDensity = 0
     private var screenWidth = 0
     private var screenHeight = 0
     private var videoCapture: VideoCapture<Recorder>? = null
-    private var recording: Recording? = null
     var debugLocationListener: LocationListener? = null
 
-    private val SCREEN_CAPTURE_REQUEST_CODE = 1001
-
-    private val requestPermissions =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            if (permissions.all { it.value }) {
-                startApp()
-            } else {
-                Toast.makeText(
-                    this,
-                    "Permissions required for full functionality",
-                    Toast.LENGTH_LONG
-                ).show()
-                startApp()
-            }
+    private val requestPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        if (permissions.all { it.value }) {
+            startApp()
+        } else {
+            Toast.makeText(this, "Permissions required for full functionality", Toast.LENGTH_LONG).show()
+            startApp()
         }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -137,9 +127,52 @@ class MainActivity : ComponentActivity() {
         screenHeight = metrics.heightPixels
 
         // Initialize MediaProjectionManager for screen recording
-        mediaProjectionManager =
-            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
+        // Check if this is the first run to prompt for API key
+        if (isFirstRun(this)) {
+            showFirstRunApiKeyDialog()
+        } else {
+            requestPermissionsAndStart()
+        }
+    }
+
+    private fun showFirstRunApiKeyDialog() {
+        val builder = AlertDialog.Builder(this)
+        val input = EditText(this)
+        input.hint = "Enter Mapbox API key"
+        input.inputType = InputType.TYPE_CLASS_TEXT
+
+        val container = LinearLayout(this)
+        container.orientation = LinearLayout.VERTICAL
+        container.setPadding(50, 30, 50, 10)
+        container.addView(input)
+
+        builder.setView(container)
+        builder.setTitle("API Key Required")
+        builder.setMessage("This app requires a Mapbox API key for maps functionality. You can get a free key from mapbox.com")
+
+        builder.setPositiveButton("Save") { dialog, _ ->
+            val apiKey = input.text.toString()
+            if (apiKey.isNotEmpty()) {
+                storeApiKey(this, "mapbox_key", apiKey)
+                Toast.makeText(this, "API key saved. Thank you!", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "No API key provided. Maps will be limited.", Toast.LENGTH_LONG).show()
+            }
+            requestPermissionsAndStart()
+        }
+
+        builder.setNegativeButton("Skip") { dialog, _ ->
+            Toast.makeText(this, "No API key provided. Maps will be limited.", Toast.LENGTH_LONG).show()
+            requestPermissionsAndStart()
+        }
+
+        builder.setCancelable(false) // Prevent dismissing by tapping outside
+        builder.show()
+    }
+
+    private fun requestPermissionsAndStart() {
         // Request required permissions
         val requiredPermissions = mutableListOf(
             Manifest.permission.CAMERA,
@@ -153,31 +186,11 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             requiredPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE)
-        }
+
 
         requestPermissions.launch(requiredPermissions.toTypedArray())
     }
 
-    @Deprecated("This method has been deprecated in favor of using the Activity Result API")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
-            if (resultCode == RESULT_OK && data != null) {
-                mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
-                startScreenRecording()
-            } else {
-                Toast.makeText(
-                    this,
-                    "Screen recording permission denied. Using regular recording.",
-                    Toast.LENGTH_SHORT
-                ).show()
-                startRegularRecording()
-            }
-        }
-    }
 
     private fun startApp() {
         Toast.makeText(
@@ -190,7 +203,6 @@ class MainActivity : ComponentActivity() {
             VideoRecorderApp(
                 locationManager = locationManager,
                 onVideoCaptureReady = { videoCapture = it },
-                onRecordButtonClick = ::handleRecordButtonClick,
                 onEnableDebugLocation = ::enableDebugTestLocation,
                 onDisableDebugLocation = ::disableDebugTestLocation
             )
@@ -198,142 +210,119 @@ class MainActivity : ComponentActivity() {
     }
 
     fun enableDebugTestLocation() {
-        Toast.makeText(this, "Debug location enabled - Golden Gate Bridge", Toast.LENGTH_SHORT)
-            .show()
+        Toast.makeText(this, "Debug location enabled - Golden Gate Bridge", Toast.LENGTH_SHORT).show()
 
+        // Create a test location
         val testLocation = Location("debug_provider").apply {
-            latitude = 37.8199
+            latitude = 37.8199  // Golden Gate Bridge
             longitude = -122.4783
             altitude = 75.0
-            speed = 5.0f
+            speed = 5.0f  // ~18 km/h
             accuracy = 3.0f
             time = System.currentTimeMillis()
         }
+
+        // Send it to the current location listener
         debugLocationListener?.onLocationChanged(testLocation)
     }
 
     fun disableDebugTestLocation() {
         Toast.makeText(this, "Debug location disabled - using real GPS", Toast.LENGTH_SHORT).show()
+        // The app will continue using real GPS updates
     }
 
-    private fun handleRecordButtonClick() {
-        if (isRecordingScreen || recording != null) {
-            stopRecording()
-        } else {
-            mediaProjectionManager?.createScreenCaptureIntent()?.let {
-                startActivityForResult(
-                    it,
-                    SCREEN_CAPTURE_REQUEST_CODE
-                )
+
+    // API Key Management Functions
+    companion object {
+        // Store API key in SharedPreferences
+        fun storeApiKey(context: Context, keyType: String, apiKey: String) {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putString(keyType, apiKey).apply()
+        }
+
+        // Retrieve API key from SharedPreferences
+        fun getStoredApiKey(context: Context, keyType: String): String? {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            return prefs.getString(keyType, null)
+        }
+
+        // Check if this is first run
+        fun isFirstRun(context: Context): Boolean {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val isFirstRun = prefs.getBoolean("first_run", true)
+            if (isFirstRun) {
+                prefs.edit().putBoolean("first_run", false).apply()
             }
+            return isFirstRun
         }
-    }
 
-    private fun stopRecording() {
-        if (isRecordingScreen) {
-            stopScreenRecording()
-        } else {
-            recording?.stop()
-            recording = null
-        }
-    }
+        // Show Mapbox API Key Dialog
+        fun showMapboxApiKeyDialog(context: Context) {
+            val builder = AlertDialog.Builder(context)
+            val input = EditText(context)
+            val currentKey = getStoredApiKey(context, "mapbox_key") ?: ""
+            input.setText(currentKey)
+            input.hint = "Enter Mapbox API key"
+            input.inputType = InputType.TYPE_CLASS_TEXT
 
-    private fun startRegularRecording() {
-        recording = startRecording(
-            context = this,
-            videoCapture = videoCapture,
-            executor = ContextCompat.getMainExecutor(this)
-        )
-    }
+            val container = LinearLayout(context)
+            container.orientation = LinearLayout.VERTICAL
+            container.setPadding(50, 30, 50, 10)
+            container.addView(input)
 
-    private fun startScreenRecording() {
-        try {
-            prepareMediaRecorder()
+            builder.setView(container)
+            builder.setTitle("Mapbox API Key")
+            builder.setMessage("Enter your Mapbox API key (get one from mapbox.com)")
 
-            virtualDisplay = mediaProjection?.createVirtualDisplay(
-                "GeotagCamera",
-                screenWidth,
-                screenHeight,
-                screenDensity,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                mediaRecorder?.surface,
-                null,
-                null
-            )
-
-            mediaRecorder?.start()
-            isRecordingScreen = true
-
-            Toast.makeText(this, "Screen recording with overlay started", Toast.LENGTH_SHORT)
-                .show()
-        } catch (e: Exception) {
-            Log.e("ScreenRecording", "Error starting screen recording: ${e.message}")
-            e.printStackTrace()
-            Toast.makeText(
-                this,
-                "Screen recording failed. Using regular recording.",
-                Toast.LENGTH_SHORT
-            ).show()
-            startRegularRecording()
-        }
-    }
-
-    private fun stopScreenRecording() {
-        try {
-            mediaRecorder?.apply {
-                stop()
-                reset()
-                release()
+            builder.setPositiveButton("Save") { dialog, _ ->
+                val apiKey = input.text.toString()
+                if (apiKey.isNotEmpty()) {
+                    storeApiKey(context, "mapbox_key", apiKey)
+                    Toast.makeText(context, "Mapbox API key saved", Toast.LENGTH_SHORT).show()
+                }
+                dialog.dismiss()
             }
-            virtualDisplay?.release()
-            mediaProjection?.stop()
-            isRecordingScreen = false
-            Toast.makeText(
-                this,
-                "Recording saved to Movies/GeotagCamera",
-                Toast.LENGTH_SHORT
-            ).show()
-        } catch (e: Exception) {
-            Log.e("ScreenRecording", "Error stopping screen recording: ${e.message}")
-        }
-    }
 
-    private fun prepareMediaRecorder() {
-        val videoFilePath =
-            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)}/GeotagCamera"
-        val videoFile = File(videoFilePath)
-        if (!videoFile.exists()) {
-            videoFile.mkdirs()
-        }
-        val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
-            .format(System.currentTimeMillis())
-        val outputFile = "$videoFilePath/GeotagVideo_$timestamp.mp4"
+            builder.setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
 
-        mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MediaRecorder(this)
-        } else {
-            @Suppress("DEPRECATION")
-            MediaRecorder()
+            builder.show()
         }
 
-        mediaRecorder?.apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setVideoSize(screenWidth, screenHeight)
-            setVideoFrameRate(30)
-            setOutputFile(outputFile)
-            prepare()
-        }
-    }
+        // Show Geoapify API Key Dialog
+        fun showGeoapifyApiKeyDialog(context: Context) {
+            val builder = AlertDialog.Builder(context)
+            val input = EditText(context)
+            val currentKey = getStoredApiKey(context, "geoapify_key") ?: ""
+            input.setText(currentKey)
+            input.hint = "Enter Geoapify API key"
+            input.inputType = InputType.TYPE_CLASS_TEXT
 
-    override fun onDestroy() {
-        super.onDestroy()
-        mediaRecorder?.release()
-        virtualDisplay?.release()
-        mediaProjection?.stop()
+            val container = LinearLayout(context)
+            container.orientation = LinearLayout.VERTICAL
+            container.setPadding(50, 30, 50, 10)
+            container.addView(input)
+
+            builder.setView(container)
+            builder.setTitle("Geoapify API Key")
+            builder.setMessage("Enter your Geoapify API key (get one from geoapify.com)")
+
+            builder.setPositiveButton("Save") { dialog, _ ->
+                val apiKey = input.text.toString()
+                if (apiKey.isNotEmpty()) {
+                    storeApiKey(context, "geoapify_key", apiKey)
+                    Toast.makeText(context, "Geoapify API key saved", Toast.LENGTH_SHORT).show()
+                }
+                dialog.dismiss()
+            }
+
+            builder.setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
+
+            builder.show()
+        }
     }
 }
 
@@ -342,7 +331,7 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
 
     val locationRequest = LocationRequest.create().apply {
-        interval = 1000
+        interval = 1000 // Update interval in milliseconds
         fastestInterval = 500
         priority = LocationRequest.PRIORITY_HIGH_ACCURACY
     }
@@ -350,13 +339,14 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     if (ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-    ) {
+        ) == PackageManager.PERMISSION_GRANTED) {
+
         fusedLocationClient.requestLocationUpdates(
             locationRequest,
             object : LocationCallback() {
                 override fun onLocationResult(locationResult: LocationResult) {
                     locationResult.lastLocation?.let { location ->
+                        // Use the same listener to maintain consistent behavior
                         locationListener.onLocationChanged(location)
                     }
                 }
@@ -366,26 +356,14 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     }
 }
 
-private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val latDiff = abs(lat1 - lat2) * 111000
-    val lonDiff = abs(lon1 - lon2) * 111000 * cos(Math.toRadians(lat1))
-    return sqrt(latDiff * latDiff + lonDiff * lonDiff)
-}
-
 @Composable
 fun VideoRecorderApp(
     locationManager: LocationManager,
     onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
-    onRecordButtonClick: () -> Unit,
     onEnableDebugLocation: () -> Unit,
-    onDisableDebugLocation: () -> Unit,
+    onDisableDebugLocation: () -> Unit
 ) {
     val context = LocalContext.current
-    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
-
-    // API key state for Mapbox
-    var mapboxApiKey by remember { mutableStateOf("") }
-    var showApiKeyDialog by remember { mutableStateOf(false) }
 
     // Location state
     var currentLocation by remember { mutableStateOf<Location?>(null) }
@@ -396,22 +374,12 @@ fun VideoRecorderApp(
     // Dialog state
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // On startup, check SharedPreferences for the saved Mapbox API key.
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("GeotagPrefs", Context.MODE_PRIVATE)
-        val savedKey = prefs.getString("mapbox_api_key", "") ?: ""
-        if (savedKey.isEmpty()) {
-            showApiKeyDialog = true
-        } else {
-            mapboxApiKey = savedKey
-        }
-    }
+    // Initialize Leaflet Map HTML
 
     // Update time every second
     LaunchedEffect(Unit) {
         while (true) {
-            currentTime =
-                SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
             delay(1000)
         }
     }
@@ -421,7 +389,7 @@ fun VideoRecorderApp(
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 currentLocation = location
-                currentSpeed = location.speed * 3.6f
+                currentSpeed = location.speed * 3.6f // Convert m/s to km/h
                 gpsStatus =
                     if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
             }
@@ -435,9 +403,12 @@ fun VideoRecorderApp(
             }
 
             @Deprecated("Deprecated in Java")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+                // Required for older Android versions
+            }
         }
 
+        // Save the listener for debug purposes
         if (context is MainActivity) {
             context.debugLocationListener = locationListener
         }
@@ -450,22 +421,28 @@ fun VideoRecorderApp(
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             try {
+                // Try to use GPS provider first
                 if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     locationManager.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER,
-                        1000,
-                        0f,
+                        1000, // 1 second
+                        0f, // 0 meters
                         locationListener
                     )
+
+                    // Set a timeout using coroutine
                     locationJob = CoroutineScope(Dispatchers.Main).launch {
-                        delay(10000)
+                        delay(10000) // 10 seconds timeout
                         if (currentLocation == null) {
+                            // No location after 10 seconds, switch to Google Play Services
                             locationManager.removeUpdates(locationListener)
                             useGooglePlayServicesLocation(context, locationListener)
                             gpsStatus = "Using Google Play Services Location"
                         }
                     }
+
                 } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    // Fall back to network provider if GPS is not available
                     locationManager.requestLocationUpdates(
                         LocationManager.NETWORK_PROVIDER,
                         1000,
@@ -473,25 +450,31 @@ fun VideoRecorderApp(
                         locationListener
                     )
                     gpsStatus = "Using Network Location"
+
+                    // Also set a timeout for network provider
                     locationJob = CoroutineScope(Dispatchers.Main).launch {
-                        delay(10000)
+                        delay(10000) // 10 seconds timeout
                         if (currentLocation == null) {
+                            // No location after 10 seconds, switch to Google Play Services
                             locationManager.removeUpdates(locationListener)
                             useGooglePlayServicesLocation(context, locationListener)
                             gpsStatus = "Using Google Play Services Location"
                         }
                     }
                 } else {
+                    // If neither GPS nor network is available, use Google Play Services directly
                     useGooglePlayServicesLocation(context, locationListener)
                     gpsStatus = "Using Google Play Services Location"
                 }
             } catch (e: Exception) {
+                // On any error, try Google Play Services as fallback
                 useGooglePlayServicesLocation(context, locationListener)
                 gpsStatus = "Location Error, Using Google Play Services"
             }
         } else {
             gpsStatus = "Location Permission Denied"
         }
+
         onDispose {
             locationManager.removeUpdates(locationListener)
             locationJob?.cancel()
@@ -515,7 +498,7 @@ fun VideoRecorderApp(
             onVideoCaptureReady = onVideoCaptureReady
         )
 
-        // Top status bar with time and GPS information
+        // Top status bar with GPS information
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -535,17 +518,20 @@ fun VideoRecorderApp(
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(
                             color = when {
                                 gpsStatus.contains("Fixed") -> Color.Green
-                                gpsStatus.contains("Active") -> Color(0xFFFFAA00)
+                                gpsStatus.contains("Active") -> Color(0xFFFFAA00) // Orange
                                 else -> Color.Red
                             }
                         )
                     }
+
                     Spacer(modifier = Modifier.width(4.dp))
+
                     Text(
                         text = gpsStatus,
                         color = Color.White,
@@ -555,7 +541,7 @@ fun VideoRecorderApp(
             }
         }
 
-        // Map overlay at bottom center using Mapbox static map API if key provided.
+        // Map overlay at bottom center
         Box(
             modifier = Modifier
                 .width(240.dp)
@@ -567,7 +553,9 @@ fun VideoRecorderApp(
                 .background(Color(0xFFE8E8E8))
         ) {
             val location = currentLocation
+
             if (location != null) {
+                // Address state
                 var address by remember { mutableStateOf("Loading address...") }
                 var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
@@ -575,12 +563,14 @@ fun VideoRecorderApp(
                 LaunchedEffect(location) {
                     try {
                         withContext(Dispatchers.IO) {
-                            val geocoder =
-                                android.location.Geocoder(context, Locale.getDefault())
+                            val geocoder = android.location.Geocoder(context, Locale.getDefault())
+
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                // Use the new API for Android 13+
                                 geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
                                     if (addresses.isNotEmpty()) {
                                         val firstAddress = addresses[0]
+                                        // Include postal code and all available address components
                                         address = listOfNotNull(
                                             firstAddress.featureName,
                                             firstAddress.thoroughfare,
@@ -589,17 +579,19 @@ fun VideoRecorderApp(
                                             firstAddress.postalCode,
                                             firstAddress.adminArea
                                         ).joinToString(", ")
+
                                         Log.d("MapDebug", "Full address: $address")
                                     } else {
                                         address = "Unknown location"
                                     }
                                 }
                             } else {
+                                // Use the deprecated API for older Android versions
                                 @Suppress("DEPRECATION")
-                                val addresses =
-                                    geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                                if (addresses != null && addresses.isNotEmpty()) {
+                                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                                if (!addresses.isNullOrEmpty()) {
                                     val firstAddress = addresses[0]
+                                    // Include postal code and all available address components
                                     address = listOfNotNull(
                                         firstAddress.featureName,
                                         firstAddress.thoroughfare,
@@ -608,6 +600,7 @@ fun VideoRecorderApp(
                                         firstAddress.postalCode,
                                         firstAddress.adminArea
                                     ).joinToString(", ")
+
                                     Log.d("MapDebug", "Full address: $address")
                                 } else {
                                     address = "Unknown location"
@@ -620,59 +613,106 @@ fun VideoRecorderApp(
                     }
                 }
 
-                // Load map image using Mapbox
-                LaunchedEffect(location, mapboxApiKey) {
-                    // Only load map if we have a valid API key.
-                    if (mapboxApiKey.isNotEmpty()) {
-                        val zoomLevel = 14
-                        val width = 240
-                        val height = 150
-                        val staticMapUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
-                                "${location.longitude},${location.latitude},$zoomLevel/" +
-                                "${width}x$height?access_token=$mapboxApiKey"
-                        Log.d("MapDebug", "Loading static map from URL: $staticMapUrl")
-                        try {
+                // Load map image using coroutines
+                LaunchedEffect(location) {
+                    try {
+                        // Try Mapbox first
+                        val mapboxKey = MainActivity.getStoredApiKey(context, "mapbox_key")
+                        if (!mapboxKey.isNullOrEmpty()) {
                             withContext(Dispatchers.IO) {
-                                val url = URL(staticMapUrl)
-                                val connection = url.openConnection() as HttpURLConnection
-                                connection.doInput = true
-                                connection.connect()
-                                val input = connection.inputStream
-                                mapBitmap = BitmapFactory.decodeStream(input)
-                                if (mapBitmap != null) {
-                                    Log.d("MapDebug", "Successfully loaded map image")
-                                } else {
-                                    Log.e("MapDebug", "Failed to decode bitmap from stream")
+                                val mapboxUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
+                                        "pin-s+ff0000(${location.longitude},${location.latitude})/" +
+                                        "${location.longitude},${location.latitude},14,0/" +
+                                        "240x150@2x" +
+                                        "?access_token=$mapboxKey"
+
+                                Log.d("MapDebug", "Loading Mapbox map")
+
+                                try {
+                                    val url = URL(mapboxUrl)
+                                    val connection = url.openConnection() as HttpURLConnection
+                                    connection.doInput = true
+                                    connection.connect()
+                                    val input = connection.inputStream
+                                    mapBitmap = BitmapFactory.decodeStream(input)
+
+                                    if (mapBitmap != null) {
+                                        Log.d("MapDebug", "Successfully loaded Mapbox map")
+                                        return@withContext // Successfully loaded Mapbox map, exit early
+                                    } else {
+                                        Log.e("MapDebug", "Failed to decode Mapbox map bitmap")
+                                        throw Exception("Failed to decode Mapbox map")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("MapDebug", "Error loading Mapbox map: ${e.message}", e)
+                                    throw Exception("Failed to load Mapbox map: ${e.message}")
                                 }
                             }
+                        } else {
+                            Log.d("MapDebug", "No Mapbox API key provided, trying Geoapify")
+                            throw Exception("No Mapbox API key provided")
+                        }
+                    } catch (e: Exception) {
+                        // If Mapbox fails, try Geoapify
+                        try {
+                            val geoapifyKey = MainActivity.getStoredApiKey(context, "geoapify_key")
+                            if (!geoapifyKey.isNullOrEmpty()) {
+                                withContext(Dispatchers.IO) {
+                                    val geoapifyUrl = "https://maps.geoapify.com/v1/staticmap" +
+                                            "?style=osm-carto" +
+                                            "&width=240&height=150" +
+                                            "&center=lonlat:${location.longitude},${location.latitude}" +
+                                            "&zoom=14" +
+                                            "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium" +
+                                            "&apiKey=$geoapifyKey"
+
+                                    Log.d("MapDebug", "Trying Geoapify map")
+
+                                    val url = URL(geoapifyUrl)
+                                    val connection = url.openConnection() as HttpURLConnection
+                                    connection.doInput = true
+                                    connection.connect()
+                                    val input = connection.inputStream
+                                    mapBitmap = BitmapFactory.decodeStream(input)
+
+                                    if (mapBitmap != null) {
+                                        Log.d("MapDebug", "Successfully loaded Geoapify map")
+                                    } else {
+                                        Log.e("MapDebug", "Failed to decode Geoapify map bitmap")
+                                    }
+                                }
+                            } else {
+                                Log.e("MapDebug", "No API keys provided for map services")
+                            }
                         } catch (e: Exception) {
-                            Log.e("MapDebug", "Error loading map image: ${e.message}", e)
+                            Log.e("MapDebug", "All map loading attempts failed: ${e.message}", e)
                         }
                     }
                 }
 
+                // Display map image if loaded
                 if (mapBitmap != null) {
-                    androidx.compose.foundation.Image(
+                    Image(
                         bitmap = mapBitmap!!.asImageBitmap(),
                         contentDescription = "Map of current location",
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
+                    // Show loading indicator if map image is not yet loaded
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (mapboxApiKey.isEmpty())
-                                "Map API key missing."
-                            else "Loading map...",
-                            color = Color.Gray
+                            text = "Loading map...\nDouble-tap to set API key",
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
 
-                // Address display on top of the map
+                // Address display at top of map
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -709,29 +749,34 @@ fun VideoRecorderApp(
                     )
                 }
             } else {
+                // Show waiting for location
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Waiting for location...",
-                        color = Color.Gray
+                        text = "Waiting for location...\nDouble-tap for settings",
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
         }
 
-        // Settings dialog (opened on double tap)
+        // Settings dialog
         if (showSettingsDialog) {
             AlertDialog(
                 onDismissRequest = {
                     showSettingsDialog = false
                 },
                 title = {
-                    Text("Debug Settings")
+                    Text("Settings")
                 },
                 text = {
                     Column {
+                        Text("Location Settings", fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp))
+
                         TextButton(
                             onClick = {
                                 onEnableDebugLocation()
@@ -740,6 +785,7 @@ fun VideoRecorderApp(
                         ) {
                             Text("Enable Debug Location (Golden Gate Bridge)")
                         }
+
                         TextButton(
                             onClick = {
                                 onDisableDebugLocation()
@@ -748,13 +794,28 @@ fun VideoRecorderApp(
                         ) {
                             Text("Disable Debug Location")
                         }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                        Text("API Keys", fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp))
+
                         TextButton(
                             onClick = {
-                                showApiKeyDialog = true
                                 showSettingsDialog = false
+                                MainActivity.showMapboxApiKeyDialog(context)
                             }
                         ) {
-                            Text("Set/Update Mapbox API Key")
+                            Text("Set Mapbox API Key")
+                        }
+
+                        TextButton(
+                            onClick = {
+                                showSettingsDialog = false
+                                MainActivity.showGeoapifyApiKeyDialog(context)
+                            }
+                        ) {
+                            Text("Set Geoapify API Key")
                         }
                     }
                 },
@@ -762,44 +823,7 @@ fun VideoRecorderApp(
                     TextButton(
                         onClick = { showSettingsDialog = false }
                     ) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        // API key input dialog
-        if (showApiKeyDialog) {
-            var tempKey by remember { mutableStateOf(mapboxApiKey) }
-            AlertDialog(
-                onDismissRequest = { showApiKeyDialog = false },
-                title = { Text("Set Mapbox API Key") },
-                text = {
-                    Column {
-                        Text("Please enter your Mapbox API key:")
-                        TextField(
-                            value = tempKey,
-                            onValueChange = { tempKey = it },
-                            placeholder = { Text("Your API key") }
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        mapboxApiKey = tempKey
-                        // Save the provided key so it persists
-                        val prefs = context.getSharedPreferences("GeotagPrefs", Context.MODE_PRIVATE)
-                        prefs.edit().putString("mapbox_api_key", mapboxApiKey).apply()
-                        showApiKeyDialog = false
-                    }) {
-                        Text("Save")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showApiKeyDialog = false
-                    }) {
-                        Text("Cancel")
+                        Text("Close")
                     }
                 }
             )
@@ -836,6 +860,7 @@ fun CameraPreview(
                 preview,
                 videoCapture
             )
+
             onVideoCaptureReady(videoCapture)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -856,78 +881,24 @@ suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutin
     }
 }
 
-fun startRecording(
-    context: Context,
-    videoCapture: VideoCapture<Recorder>?,
-    executor: Executor
-): Recording? {
-    if (videoCapture == null) return null
-
-    val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
-        .format(System.currentTimeMillis())
-
-    val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/GeotagCamera")
-        }
-    }
-
-    val mediaStoreOutputOptions = MediaStoreOutputOptions
-        .Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
-        .setContentValues(contentValues)
-        .build()
-
-    return videoCapture.output
-        .prepareRecording(context, mediaStoreOutputOptions)
-        .apply {
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                withAudioEnabled()
-            }
-        }
-        .start(executor) { recordEvent ->
-            when (recordEvent) {
-                is VideoRecordEvent.Start -> {
-                    Toast.makeText(context, "Recording started", Toast.LENGTH_SHORT).show()
-                }
-                is VideoRecordEvent.Finalize -> {
-                    if (recordEvent.hasError()) {
-                        Toast.makeText(
-                            context,
-                            "Recording error: ${recordEvent.error}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "Recording saved: ${recordEvent.outputResults.outputUri}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            }
-        }
-}
 
 @Composable
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Preview(showBackground = true)
 fun VideoRecorderAppPreview() {
+    // Simple map preview that doesn't depend on context or system services
     MapOverlayPreview()
 }
 
 @Composable
 fun MapOverlayPreview() {
+    // Mock location data for San Francisco
     val mockLat = 37.7749
     val mockLon = -122.4194
     val mockAlt = 12.5
-    val mockSpeed = 18.7f
+    val mockSpeed = 18.7f // km/h
 
     Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray)) {
+        // Top status bar with time and GPS information
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -947,6 +918,7 @@ fun MapOverlayPreview() {
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -962,6 +934,8 @@ fun MapOverlayPreview() {
                 }
             }
         }
+
+        // Map overlay at bottom center
         Box(
             modifier = Modifier
                 .width(240.dp)
@@ -988,6 +962,8 @@ fun MapOverlayPreview() {
                 }
             }
         }
+
+        // Location coordinates display just above the map
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1007,6 +983,7 @@ fun MapOverlayPreview() {
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
+
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.padding(top = 2.dp)
@@ -1016,6 +993,7 @@ fun MapOverlayPreview() {
                         color = Color.White,
                         style = TextStyle(fontSize = 12.sp)
                     )
+
                     Text(
                         text = String.format("Speed: %.1f km/h", mockSpeed),
                         color = Color.White,
