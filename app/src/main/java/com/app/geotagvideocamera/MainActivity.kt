@@ -1092,3 +1092,5 @@ fun MapOverlayPreview() {
         }
     }
 }
+
+//TODO: Have a setting to hide or show everything (the top layer, the coords, the text of address, and also add different positions for address.
