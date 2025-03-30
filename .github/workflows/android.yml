@@ -136,9 +136,9 @@ jobs:
             
             ### 📝 Version Codes by Architecture
             - ARM64 (arm64-v8a): ${{ needs.prepare-version.outputs.base_version_code }}
-            - ARM (armeabi-v7a): ${{ needs.prepare-version.outputs.base_version_code - 1 }}
-            - x86_64: ${{ needs.prepare-version.outputs.base_version_code - 2 }}
-            - x86: ${{ needs.prepare-version.outputs.base_version_code - 3 }}
+            - ARM (armeabi-v7a): ${{ needs.prepare-version.outputs.base_version_code }} - 1
+            - x86_64: ${{ needs.prepare-version.outputs.base_version_code }} - 2
+            - x86: ${{ needs.prepare-version.outputs.base_version_code }} - 3
             
             ### 📦 Available APKs
             - ARM64 (64-bit): geotag_camera-${{ needs.prepare-version.outputs.version_name }}-arm64-v8a.apk
