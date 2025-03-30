@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.location.Location
@@ -49,17 +50,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -73,8 +77,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,23 +91,9 @@ import kotlin.coroutines.suspendCoroutine
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sqrt
-import android.webkit.ConsoleMessage
-import android.webkit.WebResourceError
-import androidx.compose.ui.text.style.TextAlign
-import android.graphics.BitmapFactory
-import android.os.AsyncTask
-import android.widget.ImageView
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
-
 
 class MainActivity : ComponentActivity() {
+
     private lateinit var locationManager: LocationManager
     private var mediaProjectionManager: MediaProjectionManager? = null
     private var mediaProjection: MediaProjection? = null
@@ -116,14 +109,19 @@ class MainActivity : ComponentActivity() {
 
     private val SCREEN_CAPTURE_REQUEST_CODE = 1001
 
-    private val requestPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-        if (permissions.all { it.value }) {
-            startApp()
-        } else {
-            Toast.makeText(this, "Permissions required for full functionality", Toast.LENGTH_LONG).show()
-            startApp()
+    private val requestPermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            if (permissions.all { it.value }) {
+                startApp()
+            } else {
+                Toast.makeText(
+                    this,
+                    "Permissions required for full functionality",
+                    Toast.LENGTH_LONG
+                ).show()
+                startApp()
+            }
         }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -139,7 +137,8 @@ class MainActivity : ComponentActivity() {
         screenHeight = metrics.heightPixels
 
         // Initialize MediaProjectionManager for screen recording
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjectionManager =
+            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         // Request required permissions
         val requiredPermissions = mutableListOf(
@@ -154,8 +153,6 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             requiredPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-
-        // Add screen recording permissions for Android 10+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE)
         }
@@ -169,12 +166,14 @@ class MainActivity : ComponentActivity() {
 
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
             if (resultCode == RESULT_OK && data != null) {
-                // Start recording with projection permission
                 mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
                 startScreenRecording()
             } else {
-                // Fall back to regular video recording
-                Toast.makeText(this, "Screen recording permission denied. Using regular recording.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "Screen recording permission denied. Using regular recording.",
+                    Toast.LENGTH_SHORT
+                ).show()
                 startRegularRecording()
             }
         }
@@ -199,32 +198,28 @@ class MainActivity : ComponentActivity() {
     }
 
     fun enableDebugTestLocation() {
-        Toast.makeText(this, "Debug location enabled - Golden Gate Bridge", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Debug location enabled - Golden Gate Bridge", Toast.LENGTH_SHORT)
+            .show()
 
-        // Create a test location
         val testLocation = Location("debug_provider").apply {
-            latitude = 37.8199  // Golden Gate Bridge
+            latitude = 37.8199
             longitude = -122.4783
             altitude = 75.0
-            speed = 5.0f  // ~18 km/h
+            speed = 5.0f
             accuracy = 3.0f
             time = System.currentTimeMillis()
         }
-
-        // Send it to the current location listener
         debugLocationListener?.onLocationChanged(testLocation)
     }
 
     fun disableDebugTestLocation() {
         Toast.makeText(this, "Debug location disabled - using real GPS", Toast.LENGTH_SHORT).show()
-        // The app will continue using real GPS updates
     }
 
     private fun handleRecordButtonClick() {
         if (isRecordingScreen || recording != null) {
             stopRecording()
         } else {
-            // Request screen capture permission
             mediaProjectionManager?.createScreenCaptureIntent()?.let {
                 startActivityForResult(
                     it,
@@ -255,7 +250,6 @@ class MainActivity : ComponentActivity() {
         try {
             prepareMediaRecorder()
 
-            // Create virtual display for recording
             virtualDisplay = mediaProjection?.createVirtualDisplay(
                 "GeotagCamera",
                 screenWidth,
@@ -267,17 +261,19 @@ class MainActivity : ComponentActivity() {
                 null
             )
 
-            // Start recording
             mediaRecorder?.start()
             isRecordingScreen = true
 
-            Toast.makeText(this, "Screen recording with overlay started", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Screen recording with overlay started", Toast.LENGTH_SHORT)
+                .show()
         } catch (e: Exception) {
             Log.e("ScreenRecording", "Error starting screen recording: ${e.message}")
             e.printStackTrace()
-
-            // Fall back to regular video recording
-            Toast.makeText(this, "Screen recording failed. Using regular recording.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Screen recording failed. Using regular recording.",
+                Toast.LENGTH_SHORT
+            ).show()
             startRegularRecording()
         }
     }
@@ -289,24 +285,26 @@ class MainActivity : ComponentActivity() {
                 reset()
                 release()
             }
-
             virtualDisplay?.release()
             mediaProjection?.stop()
-
             isRecordingScreen = false
-            Toast.makeText(this, "Recording saved to Movies/GeotagCamera", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Recording saved to Movies/GeotagCamera",
+                Toast.LENGTH_SHORT
+            ).show()
         } catch (e: Exception) {
             Log.e("ScreenRecording", "Error stopping screen recording: ${e.message}")
         }
     }
 
     private fun prepareMediaRecorder() {
-        val videoFilePath = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)}/GeotagCamera"
+        val videoFilePath =
+            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)}/GeotagCamera"
         val videoFile = File(videoFilePath)
         if (!videoFile.exists()) {
             videoFile.mkdirs()
         }
-
         val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
             .format(System.currentTimeMillis())
         val outputFile = "$videoFilePath/GeotagVideo_$timestamp.mp4"
@@ -333,7 +331,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clean up resources
         mediaRecorder?.release()
         virtualDisplay?.release()
         mediaProjection?.stop()
@@ -345,7 +342,7 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
 
     val locationRequest = LocationRequest.create().apply {
-        interval = 1000 // Update interval in milliseconds
+        interval = 1000
         fastestInterval = 500
         priority = LocationRequest.PRIORITY_HIGH_ACCURACY
     }
@@ -353,14 +350,13 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     if (ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED) {
-
+        ) == PackageManager.PERMISSION_GRANTED
+    ) {
         fusedLocationClient.requestLocationUpdates(
             locationRequest,
             object : LocationCallback() {
                 override fun onLocationResult(locationResult: LocationResult) {
                     locationResult.lastLocation?.let { location ->
-                        // Use the same listener to maintain consistent behavior
                         locationListener.onLocationChanged(location)
                     }
                 }
@@ -370,10 +366,8 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     }
 }
 
-// Map utilities
 private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    // Simple distance calculation
-    val latDiff = abs(lat1 - lat2) * 111000 // approx meters per degree of latitude
+    val latDiff = abs(lat1 - lat2) * 111000
     val lonDiff = abs(lon1 - lon2) * 111000 * cos(Math.toRadians(lat1))
     return sqrt(latDiff * latDiff + lonDiff * lonDiff)
 }
@@ -384,10 +378,14 @@ fun VideoRecorderApp(
     onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
     onRecordButtonClick: () -> Unit,
     onEnableDebugLocation: () -> Unit,
-    onDisableDebugLocation: () -> Unit
+    onDisableDebugLocation: () -> Unit,
 ) {
     val context = LocalContext.current
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+
+    // API key state for Mapbox
+    var mapboxApiKey by remember { mutableStateOf("") }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
 
     // Location state
     var currentLocation by remember { mutableStateOf<Location?>(null) }
@@ -395,22 +393,25 @@ fun VideoRecorderApp(
     var currentTime by remember { mutableStateOf("") }
     var gpsStatus by remember { mutableStateOf("Searching...") }
 
-    // WebView state
-    var mapHtml by remember { mutableStateOf("") }
-
-// Dialog state
+    // Dialog state
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // Initialize Leaflet Map HTML
+    // On startup, check SharedPreferences for the saved Mapbox API key.
     LaunchedEffect(Unit) {
-        val initialLat = 0.0
-        val initialLon = 0.0
+        val prefs = context.getSharedPreferences("GeotagPrefs", Context.MODE_PRIVATE)
+        val savedKey = prefs.getString("mapbox_api_key", "") ?: ""
+        if (savedKey.isEmpty()) {
+            showApiKeyDialog = true
+        } else {
+            mapboxApiKey = savedKey
+        }
     }
 
     // Update time every second
     LaunchedEffect(Unit) {
         while (true) {
-            currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            currentTime =
+                SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
             delay(1000)
         }
     }
@@ -420,7 +421,7 @@ fun VideoRecorderApp(
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 currentLocation = location
-                currentSpeed = location.speed * 3.6f // Convert m/s to km/h
+                currentSpeed = location.speed * 3.6f
                 gpsStatus =
                     if (location.accuracy <= 10) "GPS Fixed" else "GPS Active (${location.accuracy.toInt()}m)"
             }
@@ -434,12 +435,9 @@ fun VideoRecorderApp(
             }
 
             @Deprecated("Deprecated in Java")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
-                // Required for older Android versions
-            }
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         }
 
-        // Save the listener for debug purposes
         if (context is MainActivity) {
             context.debugLocationListener = locationListener
         }
@@ -452,28 +450,22 @@ fun VideoRecorderApp(
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             try {
-                // Try to use GPS provider first
                 if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     locationManager.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER,
-                        1000, // 1 second
-                        0f, // 0 meters
+                        1000,
+                        0f,
                         locationListener
                     )
-
-                    // Set a timeout using coroutine
                     locationJob = CoroutineScope(Dispatchers.Main).launch {
-                        delay(10000) // 10 seconds timeout
+                        delay(10000)
                         if (currentLocation == null) {
-                            // No location after 10 seconds, switch to Google Play Services
                             locationManager.removeUpdates(locationListener)
                             useGooglePlayServicesLocation(context, locationListener)
                             gpsStatus = "Using Google Play Services Location"
                         }
                     }
-
                 } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    // Fall back to network provider if GPS is not available
                     locationManager.requestLocationUpdates(
                         LocationManager.NETWORK_PROVIDER,
                         1000,
@@ -481,31 +473,25 @@ fun VideoRecorderApp(
                         locationListener
                     )
                     gpsStatus = "Using Network Location"
-
-                    // Also set a timeout for network provider
                     locationJob = CoroutineScope(Dispatchers.Main).launch {
-                        delay(10000) // 10 seconds timeout
+                        delay(10000)
                         if (currentLocation == null) {
-                            // No location after 10 seconds, switch to Google Play Services
                             locationManager.removeUpdates(locationListener)
                             useGooglePlayServicesLocation(context, locationListener)
                             gpsStatus = "Using Google Play Services Location"
                         }
                     }
                 } else {
-                    // If neither GPS nor network is available, use Google Play Services directly
                     useGooglePlayServicesLocation(context, locationListener)
                     gpsStatus = "Using Google Play Services Location"
                 }
             } catch (e: Exception) {
-                // On any error, try Google Play Services as fallback
                 useGooglePlayServicesLocation(context, locationListener)
                 gpsStatus = "Location Error, Using Google Play Services"
             }
         } else {
             gpsStatus = "Location Permission Denied"
         }
-
         onDispose {
             locationManager.removeUpdates(locationListener)
             locationJob?.cancel()
@@ -529,7 +515,7 @@ fun VideoRecorderApp(
             onVideoCaptureReady = onVideoCaptureReady
         )
 
-        // Top status bar with GPS information
+        // Top status bar with time and GPS information
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -549,20 +535,17 @@ fun VideoRecorderApp(
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(
                             color = when {
                                 gpsStatus.contains("Fixed") -> Color.Green
-                                gpsStatus.contains("Active") -> Color(0xFFFFAA00) // Orange
+                                gpsStatus.contains("Active") -> Color(0xFFFFAA00)
                                 else -> Color.Red
                             }
                         )
                     }
-
                     Spacer(modifier = Modifier.width(4.dp))
-
                     Text(
                         text = gpsStatus,
                         color = Color.White,
@@ -572,9 +555,7 @@ fun VideoRecorderApp(
             }
         }
 
-
-
-        // Map overlay at bottom center
+        // Map overlay at bottom center using Mapbox static map API if key provided.
         Box(
             modifier = Modifier
                 .width(240.dp)
@@ -586,9 +567,7 @@ fun VideoRecorderApp(
                 .background(Color(0xFFE8E8E8))
         ) {
             val location = currentLocation
-
             if (location != null) {
-                // Address state
                 var address by remember { mutableStateOf("Loading address...") }
                 var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
@@ -596,14 +575,12 @@ fun VideoRecorderApp(
                 LaunchedEffect(location) {
                     try {
                         withContext(Dispatchers.IO) {
-                            val geocoder = android.location.Geocoder(context, Locale.getDefault())
-
+                            val geocoder =
+                                android.location.Geocoder(context, Locale.getDefault())
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                // Use the new API for Android 13+
                                 geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
                                     if (addresses.isNotEmpty()) {
                                         val firstAddress = addresses[0]
-                                        // Include postal code and all available address components
                                         address = listOfNotNull(
                                             firstAddress.featureName,
                                             firstAddress.thoroughfare,
@@ -612,19 +589,17 @@ fun VideoRecorderApp(
                                             firstAddress.postalCode,
                                             firstAddress.adminArea
                                         ).joinToString(", ")
-
                                         Log.d("MapDebug", "Full address: $address")
                                     } else {
                                         address = "Unknown location"
                                     }
                                 }
                             } else {
-                                // Use the deprecated API for older Android versions
                                 @Suppress("DEPRECATION")
-                                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                                val addresses =
+                                    geocoder.getFromLocation(location.latitude, location.longitude, 1)
                                 if (addresses != null && addresses.isNotEmpty()) {
                                     val firstAddress = addresses[0]
-                                    // Include postal code and all available address components
                                     address = listOfNotNull(
                                         firstAddress.featureName,
                                         firstAddress.thoroughfare,
@@ -633,7 +608,6 @@ fun VideoRecorderApp(
                                         firstAddress.postalCode,
                                         firstAddress.adminArea
                                     ).joinToString(", ")
-
                                     Log.d("MapDebug", "Full address: $address")
                                 } else {
                                     address = "Unknown location"
@@ -646,89 +620,59 @@ fun VideoRecorderApp(
                     }
                 }
 
-                // Load map image using coroutines
-                LaunchedEffect(location) {
-                    // Use OSM static map API
-                    val staticMapUrl = "https://staticmap.openstreetmap.de/staticmap.php" +
-                            "?center=${location.latitude},${location.longitude}" +
-                            "&zoom=14" +  // Adjust zoom level as needed
-                            "&size=240x150" +
-                            "&markers=${location.latitude},${location.longitude},red-pushpin"
-
-                    Log.d("MapDebug", "Loading static map from URL: $staticMapUrl")
-
-                    try {
-                        withContext(Dispatchers.IO) {
-                            val url = URL(staticMapUrl)
-                            val connection = url.openConnection() as HttpURLConnection
-                            connection.doInput = true
-                            connection.connect()
-                            val input = connection.inputStream
-                            mapBitmap = BitmapFactory.decodeStream(input)
-
-                            if (mapBitmap != null) {
-                                Log.d("MapDebug", "Successfully loaded map image, size: ${mapBitmap!!.width}x${mapBitmap!!.height}")
-                            } else {
-                                Log.e("MapDebug", "Failed to decode bitmap from stream")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("MapDebug", "Error loading map image: ${e.message}", e)
-
-                        // Try alternative map provider if the first one fails
+                // Load map image using Mapbox
+                LaunchedEffect(location, mapboxApiKey) {
+                    // Only load map if we have a valid API key.
+                    if (mapboxApiKey.isNotEmpty()) {
+                        val zoomLevel = 14
+                        val width = 240
+                        val height = 150
+                        val staticMapUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
+                                "${location.longitude},${location.latitude},$zoomLevel/" +
+                                "${width}x$height?access_token=$mapboxApiKey"
+                        Log.d("MapDebug", "Loading static map from URL: $staticMapUrl")
                         try {
                             withContext(Dispatchers.IO) {
-                                val alternativeUrl = "https://maps.geoapify.com/v1/staticmap" +
-                                        "?style=osm-carto" +
-                                        "&width=240&height=150" +
-                                        "&center=lonlat:${location.longitude},${location.latitude}" +
-                                        "&zoom=14" +
-                                        "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium&apiKey=PROVIDE_AFTER_FORKING"
-                                // Provide your own api key and it will work.
-
-                                Log.d("MapDebug", "Trying alternative map URL: $alternativeUrl")
-
-                                val url = URL(alternativeUrl)
+                                val url = URL(staticMapUrl)
                                 val connection = url.openConnection() as HttpURLConnection
                                 connection.doInput = true
                                 connection.connect()
                                 val input = connection.inputStream
                                 mapBitmap = BitmapFactory.decodeStream(input)
-
                                 if (mapBitmap != null) {
-                                    Log.d("MapDebug", "Successfully loaded alternative map image")
+                                    Log.d("MapDebug", "Successfully loaded map image")
                                 } else {
-                                    Log.e("MapDebug", "Failed to decode alternative bitmap from stream")
+                                    Log.e("MapDebug", "Failed to decode bitmap from stream")
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.e("MapDebug", "Error loading alternative map image: ${e.message}", e)
+                            Log.e("MapDebug", "Error loading map image: ${e.message}", e)
                         }
                     }
                 }
 
-                // Display map image if loaded
                 if (mapBitmap != null) {
-                    Image(
+                    androidx.compose.foundation.Image(
                         bitmap = mapBitmap!!.asImageBitmap(),
                         contentDescription = "Map of current location",
-                        contentScale = ContentScale.Crop,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    // Show loading indicator if map image is not yet loaded
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Loading map...",
+                            text = if (mapboxApiKey.isEmpty())
+                                "Map API key missing."
+                            else "Loading map...",
                             color = Color.Gray
                         )
                     }
                 }
 
-                // Address display at top of map
+                // Address display on top of the map
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -765,7 +709,6 @@ fun VideoRecorderApp(
                     )
                 }
             } else {
-                // Show waiting for location
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -778,7 +721,7 @@ fun VideoRecorderApp(
             }
         }
 
-        // Settings dialog
+        // Settings dialog (opened on double tap)
         if (showSettingsDialog) {
             AlertDialog(
                 onDismissRequest = {
@@ -805,12 +748,57 @@ fun VideoRecorderApp(
                         ) {
                             Text("Disable Debug Location")
                         }
+                        TextButton(
+                            onClick = {
+                                showApiKeyDialog = true
+                                showSettingsDialog = false
+                            }
+                        ) {
+                            Text("Set/Update Mapbox API Key")
+                        }
                     }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = { showSettingsDialog = false }
                     ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // API key input dialog
+        if (showApiKeyDialog) {
+            var tempKey by remember { mutableStateOf(mapboxApiKey) }
+            AlertDialog(
+                onDismissRequest = { showApiKeyDialog = false },
+                title = { Text("Set Mapbox API Key") },
+                text = {
+                    Column {
+                        Text("Please enter your Mapbox API key:")
+                        TextField(
+                            value = tempKey,
+                            onValueChange = { tempKey = it },
+                            placeholder = { Text("Your API key") }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        mapboxApiKey = tempKey
+                        // Save the provided key so it persists
+                        val prefs = context.getSharedPreferences("GeotagPrefs", Context.MODE_PRIVATE)
+                        prefs.edit().putString("mapbox_api_key", mapboxApiKey).apply()
+                        showApiKeyDialog = false
+                    }) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showApiKeyDialog = false
+                    }) {
                         Text("Cancel")
                     }
                 }
@@ -848,7 +836,6 @@ fun CameraPreview(
                 preview,
                 videoCapture
             )
-
             onVideoCaptureReady(videoCapture)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -908,7 +895,6 @@ fun startRecording(
                 is VideoRecordEvent.Start -> {
                     Toast.makeText(context, "Recording started", Toast.LENGTH_SHORT).show()
                 }
-
                 is VideoRecordEvent.Finalize -> {
                     if (recordEvent.hasError()) {
                         Toast.makeText(
@@ -929,22 +915,19 @@ fun startRecording(
 }
 
 @Composable
-@Preview(showBackground = true)
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
 fun VideoRecorderAppPreview() {
-    // Simple map preview that doesn't depend on context or system services
     MapOverlayPreview()
 }
 
 @Composable
 fun MapOverlayPreview() {
-    // Mock location data for San Francisco
     val mockLat = 37.7749
     val mockLon = -122.4194
     val mockAlt = 12.5
-    val mockSpeed = 18.7f // km/h
+    val mockSpeed = 18.7f
 
     Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray)) {
-        // Top status bar with time and GPS information
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -964,7 +947,6 @@ fun MapOverlayPreview() {
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -980,8 +962,6 @@ fun MapOverlayPreview() {
                 }
             }
         }
-
-        // Map overlay at bottom center
         Box(
             modifier = Modifier
                 .width(240.dp)
@@ -1008,8 +988,6 @@ fun MapOverlayPreview() {
                 }
             }
         }
-
-        // Location coordinates display just above the map
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1029,7 +1007,6 @@ fun MapOverlayPreview() {
                     color = Color.White,
                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 )
-
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.padding(top = 2.dp)
@@ -1039,7 +1016,6 @@ fun MapOverlayPreview() {
                         color = Color.White,
                         style = TextStyle(fontSize = 12.sp)
                     )
-
                     Text(
                         text = String.format("Speed: %.1f km/h", mockSpeed),
                         color = Color.White,
