@@ -16,6 +16,10 @@ import android.os.Looper
 import android.text.InputType
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -49,6 +53,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,6 +61,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -77,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -116,6 +123,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Hide system UI (status bar and navigation bar)
+        hideSystemUI()
+
         // Initialize location services
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
@@ -134,6 +144,43 @@ class MainActivity : ComponentActivity() {
             showFirstRunApiKeyDialog()
         } else {
             requestPermissionsAndStart()
+        }
+    }
+
+    private fun hideSystemUI() {
+        // Keep screen on during recording
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // We need to postpone the UI hiding until the window is attached
+        window.decorView.post {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // For Android 11+ (API 30+)
+                window.setDecorFitsSystemWindows(false)
+                window.insetsController?.let {
+                    it.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                // For older Android versions
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = (
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                        )
+            }
+
+            // Let the layout extend into the cutout area if device has one
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+
+            // Make sure we use edge-to-edge
+            WindowCompat.setDecorFitsSystemWindows(window, false)
         }
     }
 
@@ -186,7 +233,6 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             requiredPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-
 
         requestPermissions.launch(requiredPermissions.toTypedArray())
     }
@@ -244,6 +290,18 @@ class MainActivity : ComponentActivity() {
         fun getStoredApiKey(context: Context, keyType: String): String? {
             val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
             return prefs.getString(keyType, null)
+        }
+
+        // Save map zoom level
+        fun saveMapZoom(context: Context, zoomLevel: Int) {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putInt("map_zoom", zoomLevel).apply()
+        }
+
+        // Get map zoom level with default of 14
+        fun getMapZoom(context: Context): Int {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            return prefs.getInt("map_zoom", 14)
         }
 
         // Check if this is first run
@@ -371,10 +429,11 @@ fun VideoRecorderApp(
     var currentTime by remember { mutableStateOf("") }
     var gpsStatus by remember { mutableStateOf("Searching...") }
 
+    // Map zoom state
+    var mapZoom by remember { mutableIntStateOf(MainActivity.getMapZoom(context)) }
+
     // Dialog state
     var showSettingsDialog by remember { mutableStateOf(false) }
-
-    // Initialize Leaflet Map HTML
 
     // Update time every second
     LaunchedEffect(Unit) {
@@ -613,8 +672,8 @@ fun VideoRecorderApp(
                     }
                 }
 
-                // Load map image using coroutines
-                LaunchedEffect(location) {
+                // Load map image using coroutines - use mapZoom from state
+                LaunchedEffect(location, mapZoom) {
                     try {
                         // Try Mapbox first
                         val mapboxKey = MainActivity.getStoredApiKey(context, "mapbox_key")
@@ -622,11 +681,11 @@ fun VideoRecorderApp(
                             withContext(Dispatchers.IO) {
                                 val mapboxUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
                                         "pin-s+ff0000(${location.longitude},${location.latitude})/" +
-                                        "${location.longitude},${location.latitude},14,0/" +
+                                        "${location.longitude},${location.latitude},${mapZoom},0/" +
                                         "240x150@2x" +
                                         "?access_token=$mapboxKey"
 
-                                Log.d("MapDebug", "Loading Mapbox map")
+                                Log.d("MapDebug", "Loading Mapbox map with zoom level $mapZoom")
 
                                 try {
                                     val url = URL(mapboxUrl)
@@ -662,11 +721,11 @@ fun VideoRecorderApp(
                                             "?style=osm-carto" +
                                             "&width=240&height=150" +
                                             "&center=lonlat:${location.longitude},${location.latitude}" +
-                                            "&zoom=14" +
+                                            "&zoom=${mapZoom}" +
                                             "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium" +
                                             "&apiKey=$geoapifyKey"
 
-                                    Log.d("MapDebug", "Trying Geoapify map")
+                                    Log.d("MapDebug", "Trying Geoapify map with zoom level $mapZoom")
 
                                     val url = URL(geoapifyUrl)
                                     val connection = url.openConnection() as HttpURLConnection
@@ -793,6 +852,35 @@ fun VideoRecorderApp(
                             }
                         ) {
                             Text("Disable Debug Location")
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                        // Map Zoom Settings
+                        Text("Map Zoom Level: $mapZoom", fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp))
+
+                        // Add zoom slider (1-19 range for zoom levels)
+                        Slider(
+                            value = mapZoom.toFloat(),
+                            onValueChange = {
+                                mapZoom = it.toInt()
+                            },
+                            onValueChangeFinished = {
+                                // Save zoom level when user finishes adjusting
+                                MainActivity.saveMapZoom(context, mapZoom)
+                            },
+                            valueRange = 1f..19f,
+                            steps = 17, // 19 possible values (1-19), so 18 steps between them
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Far", fontSize = 12.sp, color = Color.Gray)
+                            Text("Close", fontSize = 12.sp, color = Color.Gray)
                         }
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
