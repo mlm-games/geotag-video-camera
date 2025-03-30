@@ -158,5 +158,5 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     
     // For Java 8+ APIs on older Android versions
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
