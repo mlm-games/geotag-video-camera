@@ -1,3 +1,6 @@
+import com.android.build.gradle.internal.api.ApkVariantOutputImpl
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -16,10 +19,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
+
         // Enable reproducible builds
-        setProperty("android.enableR8.fullMode", "true")
-        setProperty("android.injected.testOnly", "false")
+//        setProperty("android.enableR8.fullMode", "true")
+//        setProperty("android.injected.testOnly", "false")
     }
 
     // Add support for architecture-specific builds
@@ -32,16 +35,14 @@ android {
         }
     }
 
-    // Modify version code based on architecture
-    // This allows proper version code assignment based on ABI
     applicationVariants.all {
         val variant = this
-        variant.outputs.forEach { output ->
-            val outputImpl = output as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            val abiName = outputImpl.filters.find { it.filterType == "ABI" }?.identifier
-            
+        outputs.all {
+            val output = this as BaseVariantOutputImpl
+            val abiName = output.filters.find { it.filterType == "ABI" }?.identifier
+
             if (abiName != null) {
-                val baseVersionCode = variant.versionCode ?: 10
+                val baseVersionCode = variant.versionCode
                 val abiVersionCode = when (abiName) {
                     "x86" -> baseVersionCode - 3
                     "x86_64" -> baseVersionCode - 2
@@ -49,19 +50,21 @@ android {
                     "arm64-v8a" -> baseVersionCode
                     else -> baseVersionCode
                 }
-                
-                outputImpl.versionCodeOverride = abiVersionCode
-                outputImpl.outputFileName = "geotag_camera-${variant.versionName}-${abiName}.apk"
+
+                (output as ApkVariantOutputImpl).versionCodeOverride = abiVersionCode
+                output.outputFileName = ("geotag_camera-${variant.versionName}-${abiName}.apk")
             }
         }
     }
-    
+
+
+
     // For reproducible builds
     buildFeatures {
         buildConfig = true
         compose = true
     }
-    
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -74,24 +77,24 @@ android {
             isDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
         }
-        
+
         debug {
             // For reproducible builds in debug mode
             isDebuggable = true
         }
     }
-    
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         // For reproducible builds
         isCoreLibraryDesugaringEnabled = true
     }
-    
+
     kotlinOptions {
         jvmTarget = "17"
     }
-    
+
     // For reproducible builds
     packaging {
         resources {
@@ -100,7 +103,7 @@ android {
             excludes += "META-INF/NOTICE*"
         }
     }
-    
+
     // For reproducible builds - set fixed timestamps
     tasks.withType<AbstractArchiveTask>().configureEach {
         isPreserveFileTimestamps = false
@@ -118,7 +121,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-    
+
     // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -126,7 +129,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    
+
     // Camera
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
@@ -134,29 +137,29 @@ dependencies {
     implementation(libs.androidx.camera.video)
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.extensions)
-    
+
     // Location
     implementation(libs.gms.play.services.location)
-    
+
     // UI components
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
-    
+
     // QR code scanning
-    implementation("com.google.zxing:core:3.5.3")
-    
+    implementation(libs.core)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
-    
+
     // Debug tools
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    
+
     // For Java 8+ APIs on older Android versions
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
