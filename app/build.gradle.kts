@@ -16,75 +16,147 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Enable reproducible builds
+        setProperty("android.enableR8.fullMode", "true")
+        setProperty("android.injected.testOnly", "false")
     }
 
+    // Add support for architecture-specific builds
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
+    // Modify version code based on architecture
+    // This allows proper version code assignment based on ABI
+    applicationVariants.all {
+        val variant = this
+        variant.outputs.forEach { output ->
+            val outputImpl = output as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val abiName = outputImpl.filters.find { it.filterType == "ABI" }?.identifier
+            
+            if (abiName != null) {
+                val baseVersionCode = variant.versionCode ?: 10
+                val abiVersionCode = when (abiName) {
+                    "x86" -> baseVersionCode - 3
+                    "x86_64" -> baseVersionCode - 2
+                    "armeabi-v7a" -> baseVersionCode - 1
+                    "arm64-v8a" -> baseVersionCode
+                    else -> baseVersionCode
+                }
+                
+                outputImpl.versionCodeOverride = abiVersionCode
+                outputImpl.outputFileName = "geotag_camera-${variant.versionName}-${abiName}.apk"
+            }
+        }
+    }
+    
+    // For reproducible builds
+    buildFeatures {
+        buildConfig = true
+        compose = true
+    }
+    
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // For reproducible builds
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        
+        debug {
+            // For reproducible builds in debug mode
+            isDebuggable = true
         }
     }
+    
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        // For reproducible builds
+        isCoreLibraryDesugaringEnabled = true
     }
+    
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
-    buildFeatures {
-        compose = true
+    
+    // For reproducible builds
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/LICENSE*"
+            excludes += "META-INF/NOTICE*"
+        }
+    }
+    
+    // For reproducible builds - set fixed timestamps
+    tasks.withType<AbstractArchiveTask>().configureEach {
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
     }
 }
 
-dependencies {
+// For reproducible builds
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("-parameters")
+}
 
+dependencies {
+    // Core libraries
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    
+    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
+    
+    // Camera
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.video)
     implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.extensions)
+    
+    // Location
     implementation(libs.gms.play.services.location)
+    
+    // UI components
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.constraintlayout)
+    
+    // QR code scanning
+    implementation("com.google.zxing:core:3.5.3")
+    
+    // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    
+    // Debug tools
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-
-    // CameraX
-    implementation(libs.androidx.camera.camera2)
-    implementation(libs.camera.lifecycle)
-    implementation(libs.camera.video)
-    implementation(libs.camera.view)
-
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
-    implementation(libs.androidx.constraintlayout)
-    implementation(libs.androidx.core)
-
-    val cameraVersion = "1.5.0-alpha05"
-    implementation(libs.androidx.camera.core)
-    implementation(libs.camera.camera2)
-    implementation(libs.androidx.camera.lifecycle.v150alpha05)
-    implementation(libs.androidx.camera.video.v150alpha05)
-    implementation(libs.androidx.camera.view.v150alpha05)
-    implementation(libs.androidx.camera.extensions)
-
-    implementation("com.google.zxing:core:3.5.3")
-
-// Compose
-    implementation(libs.material3)
-    implementation(libs.androidx.material.icons.extended)
-
-
+    
+    // For Java 8+ APIs on older Android versions
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
