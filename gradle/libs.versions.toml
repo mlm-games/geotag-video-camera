@@ -60,8 +60,7 @@ androidx-camera-video = { group = "androidx.camera", name = "camera-video", vers
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
 material3 = { module = "androidx.compose.material3:material3" }
-play-services-location = { module = "com.google.android.gms:play-services-location" }
-gms-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
+microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.4.240913" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

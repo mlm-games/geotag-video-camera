@@ -138,8 +138,8 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.extensions)
 
-    // Location
-    implementation(libs.gms.play.services.location)
+    // Location (MicroG coz FDroid)
+    implementation(libs.microg.location)
 
     // UI components
     implementation(libs.androidx.appcompat)
