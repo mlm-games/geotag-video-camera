@@ -125,7 +125,7 @@ jobs:
         with:
           files: artifacts/*.apk
           name: "Geotag Camera ${{ needs.prepare-version.outputs.version_name }}"
-          tag_name: "v${{ needs.prepare-version.outputs.version_name }}"
+          tag_name: "${{ needs.prepare-version.outputs.version_name }}"
           prerelease: false
           fail_on_unmatched_files: false
           body: |
