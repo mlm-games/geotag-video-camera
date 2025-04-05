@@ -155,7 +155,7 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
 
     // QR code scanning
-    implementation(libs.core)
+    // implementation(libs.core)
 
     // Testing
     testImplementation(libs.junit)

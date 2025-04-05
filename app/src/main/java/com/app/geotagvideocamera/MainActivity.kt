@@ -84,10 +84,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -101,6 +97,12 @@ import java.util.Date
 import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import androidx.core.content.edit
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 
 class MainActivity : ComponentActivity() {
     private lateinit var locationManager: LocationManager
@@ -283,7 +285,7 @@ class MainActivity : ComponentActivity() {
         // Store API key in SharedPreferences
         fun storeApiKey(context: Context, keyType: String, apiKey: String) {
             val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putString(keyType, apiKey).apply()
+            prefs.edit { putString(keyType, apiKey) }
         }
 
         // Retrieve API key from SharedPreferences
@@ -295,7 +297,7 @@ class MainActivity : ComponentActivity() {
         // Save map zoom level
         fun saveMapZoom(context: Context, zoomLevel: Int) {
             val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putInt("map_zoom", zoomLevel).apply()
+            prefs.edit { putInt("map_zoom", zoomLevel) }
         }
 
         // Get map zoom level with default of 14
@@ -309,7 +311,7 @@ class MainActivity : ComponentActivity() {
             val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
             val isFirstRun = prefs.getBoolean("first_run", true)
             if (isFirstRun) {
-                prefs.edit().putBoolean("first_run", false).apply()
+                prefs.edit { putBoolean("first_run", false) }
             }
             return isFirstRun
         }
@@ -391,7 +393,7 @@ private fun useGooglePlayServicesLocation(context: Context, locationListener: Lo
     val locationRequest = LocationRequest.create().apply {
         interval = 1000 // Update interval in milliseconds
         fastestInterval = 500
-        priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+        priority = Priority.PRIORITY_HIGH_ACCURACY
     }
 
     if (ContextCompat.checkSelfPermission(
