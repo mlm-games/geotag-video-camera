@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -40,16 +41,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -78,7 +79,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
         hideSystemUI()
 
         // Initialize location services
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
 
         // Get screen metrics for recording
         val metrics = DisplayMetrics()
@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
         screenHeight = metrics.heightPixels
 
         // Initialize MediaProjectionManager for screen recording
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         // Check if this is the first run to prompt for API key
         if (isFirstRun(this)) {
@@ -284,31 +284,31 @@ class MainActivity : ComponentActivity() {
     companion object {
         // Store API key in SharedPreferences
         fun storeApiKey(context: Context, keyType: String, apiKey: String) {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             prefs.edit { putString(keyType, apiKey) }
         }
 
         // Retrieve API key from SharedPreferences
         fun getStoredApiKey(context: Context, keyType: String): String? {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             return prefs.getString(keyType, null)
         }
 
         // Save map zoom level
         fun saveMapZoom(context: Context, zoomLevel: Int) {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             prefs.edit { putInt("map_zoom", zoomLevel) }
         }
 
         // Get map zoom level with default of 14
         fun getMapZoom(context: Context): Int {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             return prefs.getInt("map_zoom", 14)
         }
 
         // Check if this is first run
         fun isFirstRun(context: Context): Boolean {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             val isFirstRun = prefs.getBoolean("first_run", true)
             if (isFirstRun) {
                 prefs.edit { putBoolean("first_run", false) }
@@ -433,6 +433,16 @@ fun VideoRecorderApp(
 
     // Map zoom state
     var mapZoom by remember { mutableIntStateOf(MainActivity.getMapZoom(context)) }
+
+    // Settings for UI
+    val uiSettings = MainActivity.getUiVisibilitySettings(context)
+    var showTopBar by remember { mutableStateOf(uiSettings["show_top_bar"] as Boolean) }
+    var showMap by remember { mutableStateOf(uiSettings["show_map"] as Boolean) }
+    var showCoordinates by remember { mutableStateOf(uiSettings["show_coordinates"] as Boolean) }
+    var showAddress by remember { mutableStateOf(uiSettings["show_address"] as Boolean) }
+
+    // position options: "top", "bottom", "hidden"
+    var addressPosition by remember { mutableStateOf(uiSettings["address_position"] as String) }
 
     // Dialog state
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -560,76 +570,124 @@ fun VideoRecorderApp(
         )
 
         // Top status bar with GPS information
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp, start = 8.dp, end = 8.dp)
-        ) {
-            Row(
+        if (showTopBar){
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(top = 8.dp, start = 8.dp, end = 8.dp)
             ) {
-                Text(
-                    text = currentTime,
-                    color = Color.White,
-                    style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = currentTime,
+                        color = Color.White,
+                        style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Canvas(modifier = Modifier.size(8.dp)) {
-                        drawCircle(
-                            color = when {
-                                gpsStatus.contains("Fixed") -> Color.Green
-                                gpsStatus.contains("Active") -> Color(0xFFFFAA00) // Orange
-                                else -> Color.Red
-                            }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Canvas(modifier = Modifier.size(8.dp)) {
+                            drawCircle(
+                                color = when {
+                                    gpsStatus.contains("Fixed") -> Color.Green
+                                    gpsStatus.contains("Active") -> Color(0xFFFFAA00) // Orange
+                                    else -> Color.Red
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        Text(
+                            text = gpsStatus,
+                            color = Color.White,
+                            style = TextStyle(fontSize = 12.sp)
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    Text(
-                        text = gpsStatus,
-                        color = Color.White,
-                        style = TextStyle(fontSize = 12.sp)
-                    )
                 }
             }
         }
 
-        // Map overlay at bottom center
-        Box(
-            modifier = Modifier
-                .width(240.dp)
-                .height(150.dp)
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 24.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
-                .background(Color(0xFFE8E8E8))
-        ) {
-            val location = currentLocation
+        var address by remember { mutableStateOf("Loading address...") }
+        var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-            if (location != null) {
-                // Address state
-                var address by remember { mutableStateOf("Loading address...") }
-                var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
+// Map overlay at bottom center - only show if enabled
+        if (showMap) {
+            // If address should be shown above the map
+            if (showAddress && addressPosition == "above_map" && currentLocation != null) {
+                Box(
+                    modifier = Modifier
+                        .width(240.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 176.dp) // Position it just above the map (150dp + 24dp bottom padding + 2dp gap)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = address,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
 
-                // Get address from location with postal code
-                LaunchedEffect(location) {
-                    try {
-                        withContext(Dispatchers.IO) {
-                            val geocoder = android.location.Geocoder(context, Locale.getDefault())
+            // The map box itself
+            Box(
+                modifier = Modifier
+                    .width(240.dp)
+                    .height(150.dp)
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                    .background(Color(0xFFE8E8E8))
+            ) {
+                val location = currentLocation
 
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                // Use the new API for Android 13+
-                                geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
-                                    if (addresses.isNotEmpty()) {
+                if (location != null) {
+                    // Get address from location with postal code
+                    LaunchedEffect(location) {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                val geocoder = android.location.Geocoder(context, Locale.getDefault())
+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    // Use the new API for Android 13+
+                                    geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
+                                        if (addresses.isNotEmpty()) {
+                                            val firstAddress = addresses[0]
+                                            // Include postal code and all available address components
+                                            address = listOfNotNull(
+                                                firstAddress.featureName,
+                                                firstAddress.thoroughfare,
+                                                firstAddress.subLocality,
+                                                firstAddress.locality,
+                                                firstAddress.postalCode,
+                                                firstAddress.adminArea
+                                            ).joinToString(", ")
+
+                                            Log.d("MapDebug", "Full address: $address")
+                                        } else {
+                                            address = "Unknown location"
+                                        }
+                                    }
+                                } else {
+                                    // Use the deprecated API for older Android versions
+                                    @Suppress("DEPRECATION")
+                                    val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                                    if (!addresses.isNullOrEmpty()) {
                                         val firstAddress = addresses[0]
                                         // Include postal code and all available address components
                                         address = listOfNotNull(
@@ -646,180 +704,171 @@ fun VideoRecorderApp(
                                         address = "Unknown location"
                                     }
                                 }
-                            } else {
-                                // Use the deprecated API for older Android versions
-                                @Suppress("DEPRECATION")
-                                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                                if (!addresses.isNullOrEmpty()) {
-                                    val firstAddress = addresses[0]
-                                    // Include postal code and all available address components
-                                    address = listOfNotNull(
-                                        firstAddress.featureName,
-                                        firstAddress.thoroughfare,
-                                        firstAddress.subLocality,
-                                        firstAddress.locality,
-                                        firstAddress.postalCode,
-                                        firstAddress.adminArea
-                                    ).joinToString(", ")
-
-                                    Log.d("MapDebug", "Full address: $address")
-                                } else {
-                                    address = "Unknown location"
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("Geocoder", "Error getting address", e)
-                        address = "Address lookup failed"
-                    }
-                }
-
-                // Load map image using coroutines - use mapZoom from state
-                LaunchedEffect(location, mapZoom) {
-                    try {
-                        // Try Mapbox first
-                        val mapboxKey = MainActivity.getStoredApiKey(context, "mapbox_key")
-                        if (!mapboxKey.isNullOrEmpty()) {
-                            withContext(Dispatchers.IO) {
-                                val mapboxUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
-                                        "pin-s+ff0000(${location.longitude},${location.latitude})/" +
-                                        "${location.longitude},${location.latitude},${mapZoom},0/" +
-                                        "240x150@2x" +
-                                        "?access_token=$mapboxKey"
-
-                                Log.d("MapDebug", "Loading Mapbox map with zoom level $mapZoom")
-
-                                try {
-                                    val url = URL(mapboxUrl)
-                                    val connection = url.openConnection() as HttpURLConnection
-                                    connection.doInput = true
-                                    connection.connect()
-                                    val input = connection.inputStream
-                                    mapBitmap = BitmapFactory.decodeStream(input)
-
-                                    if (mapBitmap != null) {
-                                        Log.d("MapDebug", "Successfully loaded Mapbox map")
-                                        return@withContext // Successfully loaded Mapbox map, exit early
-                                    } else {
-                                        Log.e("MapDebug", "Failed to decode Mapbox map bitmap")
-                                        throw Exception("Failed to decode Mapbox map")
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("MapDebug", "Error loading Mapbox map: ${e.message}", e)
-                                    throw Exception("Failed to load Mapbox map: ${e.message}")
-                                }
-                            }
-                        } else {
-                            Log.d("MapDebug", "No Mapbox API key provided, trying Geoapify")
-                            throw Exception("No Mapbox API key provided")
-                        }
-                    } catch (e: Exception) {
-                        // If Mapbox fails, try Geoapify
-                        try {
-                            val geoapifyKey = MainActivity.getStoredApiKey(context, "geoapify_key")
-                            if (!geoapifyKey.isNullOrEmpty()) {
-                                withContext(Dispatchers.IO) {
-                                    val geoapifyUrl = "https://maps.geoapify.com/v1/staticmap" +
-                                            "?style=osm-carto" +
-                                            "&width=240&height=150" +
-                                            "&center=lonlat:${location.longitude},${location.latitude}" +
-                                            "&zoom=${mapZoom}" +
-                                            "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium" +
-                                            "&apiKey=$geoapifyKey"
-
-                                    Log.d("MapDebug", "Trying Geoapify map with zoom level $mapZoom")
-
-                                    val url = URL(geoapifyUrl)
-                                    val connection = url.openConnection() as HttpURLConnection
-                                    connection.doInput = true
-                                    connection.connect()
-                                    val input = connection.inputStream
-                                    mapBitmap = BitmapFactory.decodeStream(input)
-
-                                    if (mapBitmap != null) {
-                                        Log.d("MapDebug", "Successfully loaded Geoapify map")
-                                    } else {
-                                        Log.e("MapDebug", "Failed to decode Geoapify map bitmap")
-                                    }
-                                }
-                            } else {
-                                Log.e("MapDebug", "No API keys provided for map services")
                             }
                         } catch (e: Exception) {
-                            Log.e("MapDebug", "All map loading attempts failed: ${e.message}", e)
+                            Log.e("Geocoder", "Error getting address", e)
+                            address = "Address lookup failed"
                         }
                     }
-                }
 
-                // Display map image if loaded
-                if (mapBitmap != null) {
-                    Image(
-                        bitmap = mapBitmap!!.asImageBitmap(),
-                        contentDescription = "Map of current location",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    // Load map image using coroutines
+                    LaunchedEffect(location, mapZoom) {
+                        try {
+                            // Try Mapbox first
+                            val mapboxKey = MainActivity.getStoredApiKey(context, "mapbox_key")
+                            if (!mapboxKey.isNullOrEmpty()) {
+                                withContext(Dispatchers.IO) {
+                                    val mapboxUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
+                                            "pin-s+ff0000(${location.longitude},${location.latitude})/" +
+                                            "${location.longitude},${location.latitude},${mapZoom},0/" +
+                                            "240x150@2x" +
+                                            "?access_token=$mapboxKey"
+
+                                    Log.d("MapDebug", "Loading Mapbox map with zoom level $mapZoom")
+
+                                    try {
+                                        val url = URL(mapboxUrl)
+                                        val connection = url.openConnection() as HttpURLConnection
+                                        connection.doInput = true
+                                        connection.connect()
+                                        val input = connection.inputStream
+                                        mapBitmap = BitmapFactory.decodeStream(input)
+
+                                        if (mapBitmap != null) {
+                                            Log.d("MapDebug", "Successfully loaded Mapbox map")
+                                            return@withContext // Successfully loaded Mapbox map, exit early
+                                        } else {
+                                            Log.e("MapDebug", "Failed to decode Mapbox map bitmap")
+                                            throw Exception("Failed to decode Mapbox map")
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("MapDebug", "Error loading Mapbox map: ${e.message}", e)
+                                        throw Exception("Failed to load Mapbox map: ${e.message}")
+                                    }
+                                }
+                            } else {
+                                Log.d("MapDebug", "No Mapbox API key provided, trying Geoapify")
+                                throw Exception("No Mapbox API key provided")
+                            }
+                        } catch (e: Exception) {
+                            // If Mapbox fails, try Geoapify
+                            try {
+                                val geoapifyKey = MainActivity.getStoredApiKey(context, "geoapify_key")
+                                if (!geoapifyKey.isNullOrEmpty()) {
+                                    withContext(Dispatchers.IO) {
+                                        val geoapifyUrl = "https://maps.geoapify.com/v1/staticmap" +
+                                                "?style=osm-carto" +
+                                                "&width=240&height=150" +
+                                                "&center=lonlat:${location.longitude},${location.latitude}" +
+                                                "&zoom=${mapZoom}" +
+                                                "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium" +
+                                                "&apiKey=$geoapifyKey"
+
+                                        Log.d("MapDebug", "Trying Geoapify map with zoom level $mapZoom")
+
+                                        val url = URL(geoapifyUrl)
+                                        val connection = url.openConnection() as HttpURLConnection
+                                        connection.doInput = true
+                                        connection.connect()
+                                        val input = connection.inputStream
+                                        mapBitmap = BitmapFactory.decodeStream(input)
+
+                                        if (mapBitmap != null) {
+                                            Log.d("MapDebug", "Successfully loaded Geoapify map")
+                                        } else {
+                                            Log.e("MapDebug", "Failed to decode Geoapify map bitmap")
+                                        }
+                                    }
+                                } else {
+                                    Log.e("MapDebug", "No API keys provided for map services")
+                                }
+                            } catch (e: Exception) {
+                                Log.e("MapDebug", "All map loading attempts failed: ${e.message}", e)
+                            }
+                        }
+                    }
+
+                    // Display map image if loaded
+                    if (mapBitmap != null) {
+                        Image(
+                            bitmap = mapBitmap!!.asImageBitmap(),
+                            contentDescription = "Map of current location",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        // Show loading indicator
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Loading map...\nDouble-tap to set API key",
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Only show address inside the map if that position is selected
+                    if (showAddress && (addressPosition == "top" || addressPosition == "bottom")) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(if (addressPosition == "top") Alignment.TopCenter else Alignment.BottomCenter)
+                                .background(Color.Black.copy(alpha = 0.7f))
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = address,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // Only show coordinates if enabled
+                    if (showCoordinates) {
+                        // Position coordinates at bottom if address is not there, otherwise position them appropriately
+                        val coordinatesAlignment = when {
+                            !showAddress -> Alignment.BottomCenter
+                            addressPosition == "bottom" -> Alignment.BottomCenter
+                            else -> Alignment.BottomCenter
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .align(coordinatesAlignment)
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.7f))
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = String.format("%.6f°, %.6f°", location.latitude, location.longitude),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                 } else {
-                    // Show loading indicator if map image is not yet loaded
+                    // Show waiting for location
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Loading map...\nDouble-tap to set API key",
+                            text = "Waiting for location...\nDouble-tap for settings",
                             color = Color.Gray,
                             textAlign = TextAlign.Center
                         )
                     }
-                }
-
-                // Address display at top of map
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter)
-                        .background(Color.Black.copy(alpha = 0.7f))
-                        .padding(4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = address,
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Coordinates display at bottom of map
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.7f))
-                        .padding(4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = String.format("%.6f°, %.6f°", location.latitude, location.longitude),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            } else {
-                // Show waiting for location
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Waiting for location...\nDouble-tap for settings",
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center
-                    )
                 }
             }
         }
@@ -834,78 +883,248 @@ fun VideoRecorderApp(
                     Text("Settings")
                 },
                 text = {
-                    Column {
-                        Text("Location Settings", fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp))
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // Set a maximum height to ensure scrolling
+                            .heightIn(max = 400.dp)
+                    ) {
+                        item {
+                            // Location Settings
+                            Text("Location Settings", fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp))
 
-                        TextButton(
-                            onClick = {
-                                onEnableDebugLocation()
-                                showSettingsDialog = false
+                            TextButton(
+                                onClick = {
+                                    onEnableDebugLocation()
+                                    showSettingsDialog = false
+                                }
+                            ) {
+                                Text("Enable Debug Location (Golden Gate Bridge)")
                             }
-                        ) {
-                            Text("Enable Debug Location (Golden Gate Bridge)")
+
+                            TextButton(
+                                onClick = {
+                                    onDisableDebugLocation()
+                                    showSettingsDialog = false
+                                }
+                            ) {
+                                Text("Disable Debug Location")
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         }
 
-                        TextButton(
-                            onClick = {
-                                onDisableDebugLocation()
-                                showSettingsDialog = false
+                        item {
+                            // Map Zoom Settings
+                            Text("Map Zoom Level: $mapZoom", fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp))
+
+                            // Add zoom slider (1-19 range for zoom levels)
+                            Slider(
+                                value = mapZoom.toFloat(),
+                                onValueChange = {
+                                    mapZoom = it.toInt()
+                                },
+                                onValueChangeFinished = {
+                                    // Save zoom level when user finishes adjusting
+                                    MainActivity.saveMapZoom(context, mapZoom)
+                                },
+                                valueRange = 1f..19f,
+                                steps = 17, // 19 possible values (1-19), so 18 steps between them
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Far", fontSize = 12.sp, color = Color.Gray)
+                                Text("Close", fontSize = 12.sp, color = Color.Gray)
                             }
-                        ) {
-                            Text("Disable Debug Location")
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         }
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        item {
+                            // UI Visibility Settings
+                            Text("UI Visibility", fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp))
 
-                        // Map Zoom Settings
-                        Text("Map Zoom Level: $mapZoom", fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Show Top Status Bar")
+                                androidx.compose.material3.Switch(
+                                    checked = showTopBar,
+                                    onCheckedChange = {
+                                        showTopBar = it
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    }
+                                )
+                            }
 
-                        // Add zoom slider (1-19 range for zoom levels)
-                        Slider(
-                            value = mapZoom.toFloat(),
-                            onValueChange = {
-                                mapZoom = it.toInt()
-                            },
-                            onValueChangeFinished = {
-                                // Save zoom level when user finishes adjusting
-                                MainActivity.saveMapZoom(context, mapZoom)
-                            },
-                            valueRange = 1f..19f,
-                            steps = 17, // 19 possible values (1-19), so 18 steps between them
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Show Map")
+                                androidx.compose.material3.Switch(
+                                    checked = showMap,
+                                    onCheckedChange = {
+                                        showMap = it
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    }
+                                )
+                            }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Far", fontSize = 12.sp, color = Color.Gray)
-                            Text("Close", fontSize = 12.sp, color = Color.Gray)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Show Coordinates")
+                                androidx.compose.material3.Switch(
+                                    checked = showCoordinates,
+                                    onCheckedChange = {
+                                        showCoordinates = it
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Show Address")
+                                androidx.compose.material3.Switch(
+                                    checked = showAddress,
+                                    onCheckedChange = {
+                                        showAddress = it
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    }
+                                )
+                            }
                         }
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        item {
+                            Text("Address Position",
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        addressPosition = "top"
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = if (addressPosition == "top")
+                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                        else Color.Gray
+                                    )
+                                ) {
+                                    Text("Inside Top")
+                                }
 
-                        Text("API Keys", fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp))
-
-                        TextButton(
-                            onClick = {
-                                showSettingsDialog = false
-                                MainActivity.showMapboxApiKeyDialog(context)
+                                TextButton(
+                                    onClick = {
+                                        addressPosition = "bottom"
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = if (addressPosition == "bottom")
+                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                        else Color.Gray
+                                    )
+                                ) {
+                                    Text("Inside Bottom")
+                                }
                             }
-                        ) {
-                            Text("Set Mapbox API Key")
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        addressPosition = "above_map"
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = if (addressPosition == "above_map")
+                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                        else Color.Gray
+                                    )
+                                ) {
+                                    Text("Above Map")
+                                }
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         }
 
-                        TextButton(
-                            onClick = {
-                                showSettingsDialog = false
-                                MainActivity.showGeoapifyApiKeyDialog(context)
+                        item {
+                            Text("API Keys", fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp))
+
+                            TextButton(
+                                onClick = {
+                                    showSettingsDialog = false
+                                    MainActivity.showMapboxApiKeyDialog(context)
+                                }
+                            ) {
+                                Text("Set Mapbox API Key")
                             }
-                        ) {
-                            Text("Set Geoapify API Key")
+
+                            TextButton(
+                                onClick = {
+                                    showSettingsDialog = false
+                                    MainActivity.showGeoapifyApiKeyDialog(context)
+                                }
+                            ) {
+                                Text("Set Geoapify API Key")
+                            }
                         }
                     }
                 },
@@ -918,8 +1137,35 @@ fun VideoRecorderApp(
                 }
             )
         }
+
     }
 }
+
+
+
+fun MainActivity.Companion.saveUiVisibilitySettings(context: Context, showTopBar: Boolean, showMap: Boolean,
+                             showCoordinates: Boolean, showAddress: Boolean, addressPosition: String) {
+    val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+    prefs.edit {
+        putBoolean("show_top_bar", showTopBar)
+        putBoolean("show_map", showMap)
+        putBoolean("show_coordinates", showCoordinates)
+        putBoolean("show_address", showAddress)
+        putString("address_position", addressPosition)
+    }
+}
+
+fun MainActivity.Companion.getUiVisibilitySettings(context: Context): Map<String, Any> {
+    val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+    return mapOf(
+        "show_top_bar" to prefs.getBoolean("show_top_bar", true),
+        "show_map" to prefs.getBoolean("show_map", true),
+        "show_coordinates" to prefs.getBoolean("show_coordinates", true),
+        "show_address" to prefs.getBoolean("show_address", true),
+        "address_position" to prefs.getString("address_position", "top")!!
+    )
+}
+
 
 @Composable
 fun CameraPreview(
@@ -971,128 +1217,4 @@ suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutin
     }
 }
 
-
-@Composable
-@Preview(showBackground = true)
-fun VideoRecorderAppPreview() {
-    // Simple map preview that doesn't depend on context or system services
-    MapOverlayPreview()
-}
-
-@Composable
-fun MapOverlayPreview() {
-    // Mock location data for San Francisco
-    val mockLat = 37.7749
-    val mockLon = -122.4194
-    val mockAlt = 12.5
-    val mockSpeed = 18.7f // km/h
-
-    Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray)) {
-        // Top status bar with time and GPS information
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp, start = 8.dp, end = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "12:34:56",
-                    color = Color.White,
-                    style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(Color.Green, CircleShape)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "GPS Fixed",
-                        color = Color.White,
-                        style = TextStyle(fontSize = 12.sp)
-                    )
-                }
-            }
-        }
-
-        // Map overlay at bottom center
-        Box(
-            modifier = Modifier
-                .width(240.dp)
-                .height(150.dp)
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 24.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
-                .background(Color(0xFFE0E0E0))
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Map Preview",
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$mockLat, $mockLon",
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-
-        // Location coordinates display just above the map
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 180.dp)
-                .align(Alignment.BottomCenter)
-        ) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = String.format("%.6f°, %.6f°", mockLat, mockLon),
-                    color = Color.White,
-                    style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    Text(
-                        text = String.format("Alt: %.1f m", mockAlt),
-                        color = Color.White,
-                        style = TextStyle(fontSize = 12.sp)
-                    )
-
-                    Text(
-                        text = String.format("Speed: %.1f km/h", mockSpeed),
-                        color = Color.White,
-                        style = TextStyle(fontSize = 12.sp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-//TODO: Have a setting to hide or show everything (the top layer, the coords, the text of address, and also add different positions for address.
+//TODO: choose styles based on api? Not needed
