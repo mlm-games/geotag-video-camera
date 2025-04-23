@@ -1,47 +1,31 @@
 [versions]
-agp = "8.9.1"
+agp = "8.9.2"
 appcompat = "1.7.0"
-cameraLifecycleVersion = "1.5.0-alpha05"
-cameraVersion = "1.5.0-alpha05"
-cameraVideoVersion = "1.5.0-alpha05"
-cameraViewVersion = "1.4.2"
-constraintlayout = "2.2.0"
-core = "1.15.0"
-coreVersion = "3.5.3"
+cameraVersion = "1.5.0-alpha06"
+constraintlayout = "2.2.1"
 desugar_jdk_libs = "2.1.5"
-kotlin = "2.0.0"
-coreKtx = "1.15.0"
+kotlin = "2.1.20"
+coreKtx = "1.16.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
-espressoCore = "3.5.1"
+espressoCore = "3.6.1"
 lifecycleRuntimeKtx = "2.8.7"
-activityCompose = "1.10.0"
+activityCompose = "1.10.1"
 composeBom = "2025.04.00"
-cameraLifecycle = "1.4.1"
-cameraVideo = "1.4.1"
+cameraLifecycle = "1.4.2"
+cameraVideo = "1.4.2"
 cameraView = "1.4.2"
 material = "1.12.0"
-playServicesLocation = "21.3.0"
 exifinterface = "1.4.0"
 
 [libraries]
-accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2" }
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraVersion" }
 androidx-camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "cameraVersion" }
-androidx-camera-lifecycle-v150alpha05 = { module = "androidx.camera:camera-lifecycle", version.ref = "cameraLifecycleVersion" }
-androidx-camera-video-v150alpha05 = { module = "androidx.camera:camera-video", version.ref = "cameraVideoVersion" }
-androidx-camera-view-v150alpha05 = { module = "androidx.camera:camera-view", version.ref = "cameraViewVersion" }
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "constraintlayout" }
-androidx-core = { module = "androidx.core:core", version.ref = "core" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "cameraVersion" }
-camera-lifecycle = { module = "androidx.camera:camera-lifecycle" }
-camera-video = { module = "androidx.camera:camera-video" }
-camera-view = { module = "androidx.camera:camera-view" }
-core = { module = "com.google.zxing:core", version.ref = "coreVersion" }
 desugar_jdk_libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -60,7 +44,6 @@ androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycl
 androidx-camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "cameraVideo" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
-material3 = { module = "androidx.compose.material3:material3" }
 microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.4.240913" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 

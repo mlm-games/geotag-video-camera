@@ -3,16 +3,21 @@ package com.app.geotagvideocamera
 import android.Manifest
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.location.Geocoder
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.MediaRecorder
+import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.util.DisplayMetrics
@@ -28,6 +33,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
@@ -41,19 +47,25 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,6 +78,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -73,7 +86,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -82,7 +94,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.core.view.WindowCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,38 +112,10 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
-import androidx.core.content.edit
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import android.app.Activity
-import android.content.Intent
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.MediaRecorder
-import android.media.projection.MediaProjection
-import android.os.Environment
-import android.os.Handler
-import androidx.camera.core.ImageCapture
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Alignment
-import java.io.File
-import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class MainActivity : ComponentActivity() {
     private lateinit var locationManager: LocationManager
@@ -218,7 +208,7 @@ class MainActivity : ComponentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQUEST_CODE_SCREEN_CAPTURE) {
-            if (resultCode == Activity.RESULT_OK && data != null) {
+            if (resultCode == RESULT_OK && data != null) {
                 // Got permission to record the screen
                 mediaRecorder = MediaUtils.createMediaRecorder(this, screenWidth, screenHeight)
 
@@ -511,14 +501,14 @@ class MainActivity : ComponentActivity() {
         }
 
         fun saveInAppRecordingSettings(context: Context, useInAppRecording: Boolean) {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             prefs.edit {
                 putBoolean("use_in_app_recording", useInAppRecording)
             }
         }
 
         fun getInAppRecordingSettings(context: Context): Boolean {
-            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("geotag_prefs", MODE_PRIVATE)
             return prefs.getBoolean("use_in_app_recording", false)
         }
 
@@ -580,8 +570,8 @@ fun VideoRecorderApp(
     var currentSpeed by remember { mutableFloatStateOf(0f) }
     var currentTime by remember { mutableStateOf("") }
     var gpsStatus by remember { mutableStateOf("Searching...") }
-    var address by remember { mutableStateOf("Loading address...") }
-    var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
+//    var address by remember { mutableStateOf("Loading address...") }
+//    var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     // Camera state
     var cameraMode by remember { mutableStateOf(CameraMode.VIDEO) }
@@ -694,7 +684,7 @@ fun VideoRecorderApp(
                     useGooglePlayServicesLocation(context, locationListener)
                     gpsStatus = "Using Google Play Services Location"
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // On any error, try Google Play Services as fallback
                 useGooglePlayServicesLocation(context, locationListener)
                 gpsStatus = "Location Error, Using Google Play Services"
@@ -919,7 +909,7 @@ fun VideoRecorderApp(
                                 Log.d("MapDebug", "No Mapbox API key provided, trying Geoapify")
                                 throw Exception("No Mapbox API key provided")
                             }
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             // If Mapbox fails, try Geoapify
                             try {
                                 val geoapifyKey = MainActivity.getStoredApiKey(context, "geoapify_key")
@@ -1477,7 +1467,7 @@ fun CameraPreview(
     onImageCaptureReady: (ImageCapture) -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
 
     LaunchedEffect(previewView, cameraMode) {
