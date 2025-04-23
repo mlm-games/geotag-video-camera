@@ -22,6 +22,7 @@ cameraVideo = "1.4.1"
 cameraView = "1.4.2"
 material = "1.12.0"
 playServicesLocation = "21.3.0"
+exifinterface = "1.4.0"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions" }
@@ -61,6 +62,7 @@ androidx-camera-view = { group = "androidx.camera", name = "camera-view", versio
 material = { module = "com.google.android.material:material", version.ref = "material" }
 material3 = { module = "androidx.compose.material3:material3" }
 microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.4.240913" }
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

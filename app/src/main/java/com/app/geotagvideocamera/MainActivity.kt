@@ -66,7 +66,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -103,6 +102,30 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import android.app.Activity
+import android.content.Intent
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.MediaRecorder
+import android.media.projection.MediaProjection
+import android.os.Environment
+import android.os.Handler
+import androidx.camera.core.ImageCapture
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
     private lateinit var locationManager: LocationManager
@@ -112,6 +135,14 @@ class MainActivity : ComponentActivity() {
     private var screenHeight = 0
     private var videoCapture: VideoCapture<Recorder>? = null
     var debugLocationListener: LocationListener? = null
+
+    private lateinit var cameraExecutor: ExecutorService
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var mediaRecorder: MediaRecorder? = null
+    private var isRecording = false
+    private val REQUEST_CODE_SCREEN_CAPTURE = 1001
+    val recordingModeState = mutableStateOf(false)
 
     private val requestPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
         if (permissions.all { it.value }) {
@@ -127,6 +158,9 @@ class MainActivity : ComponentActivity() {
 
         // Hide system UI (status bar and navigation bar)
         hideSystemUI()
+
+        // Executor initialization
+        cameraExecutor = Executors.newSingleThreadExecutor()
 
         // Initialize location services
         locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
@@ -148,6 +182,98 @@ class MainActivity : ComponentActivity() {
             requestPermissionsAndStart()
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
+        stopScreenRecording()
+    }
+
+    fun prepareForScreenRecording() {
+        // Signal to the UI to hide controls
+        recordingModeState.value = true
+
+        // Give UI time to update before starting recording
+        Handler(Looper.getMainLooper()).postDelayed({
+            startScreenRecording()
+        }, 300) // Short delay to ensure UI updates
+    }
+
+    private fun startScreenRecording() {
+        if (mediaProjectionManager == null) {
+            mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        }
+
+        val captureIntent = mediaProjectionManager!!.createScreenCaptureIntent()
+        startActivityForResult(captureIntent, REQUEST_CODE_SCREEN_CAPTURE)
+
+        Toast.makeText(
+            this,
+            "Recording mode active. Long-press anywhere to stop recording.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_CODE_SCREEN_CAPTURE) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                // Got permission to record the screen
+                mediaRecorder = MediaUtils.createMediaRecorder(this, screenWidth, screenHeight)
+
+                mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
+                createVirtualDisplay()
+
+                mediaRecorder?.start()
+                isRecording = true
+
+                Toast.makeText(this, "Recording started", Toast.LENGTH_SHORT).show()
+            } else {
+                // User canceled, restore UI
+                recordingModeState.value = false
+            }
+        }
+    }
+
+    private fun createVirtualDisplay() {
+        virtualDisplay = mediaProjection?.createVirtualDisplay(
+            "ScreenCapture",
+            screenWidth, screenHeight, screenDensity,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            mediaRecorder?.surface, null, null
+        )
+    }
+
+    fun stopScreenRecording() {
+        if (!isRecording) return
+
+        // First restore the UI
+        recordingModeState.value = false
+
+        try {
+            mediaRecorder?.apply {
+                stop()
+                reset()
+                release()
+            }
+
+            virtualDisplay?.release()
+            mediaProjection?.stop()
+
+            mediaRecorder = null
+            virtualDisplay = null
+            mediaProjection = null
+
+            isRecording = false
+
+            Toast.makeText(this, "Recording saved", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error stopping recording", e)
+            Toast.makeText(this, "Error saving recording", Toast.LENGTH_SHORT).show()
+        }
+    }
+
 
     private fun hideSystemUI() {
         // Keep screen on during recording
@@ -383,6 +509,29 @@ class MainActivity : ComponentActivity() {
 
             builder.show()
         }
+
+        fun saveInAppRecordingSettings(context: Context, useInAppRecording: Boolean) {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            prefs.edit {
+                putBoolean("use_in_app_recording", useInAppRecording)
+            }
+        }
+
+        fun getInAppRecordingSettings(context: Context): Boolean {
+            val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
+            return prefs.getBoolean("use_in_app_recording", false)
+        }
+
+        fun showInAppRecordingWarningDialog(context: Context, onConfirm: () -> Unit) {
+            AlertDialog.Builder(context)
+                .setTitle("Performance Warning")
+                .setMessage("In-app video recording with overlay may affect performance on some devices, especially during longer recordings. The system screen recorder is recommended for better performance.\n\nDo you want to continue?")
+                .setPositiveButton("Enable Anyway") { _, _ ->
+                    onConfirm()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
     }
 }
 
@@ -424,12 +573,25 @@ fun VideoRecorderApp(
     onDisableDebugLocation: () -> Unit
 ) {
     val context = LocalContext.current
+    val mainActivity = context as MainActivity
 
     // Location state
     var currentLocation by remember { mutableStateOf<Location?>(null) }
     var currentSpeed by remember { mutableFloatStateOf(0f) }
     var currentTime by remember { mutableStateOf("") }
     var gpsStatus by remember { mutableStateOf("Searching...") }
+    var address by remember { mutableStateOf("Loading address...") }
+    var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    // Camera state
+    var cameraMode by remember { mutableStateOf(CameraMode.VIDEO) }
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+
+    // UI state
+    val isRecordingMode = mainActivity.recordingModeState.value
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var useInAppRecording by remember { mutableStateOf(MainActivity.getInAppRecordingSettings(context)) }
 
     // Map zoom state
     var mapZoom by remember { mutableIntStateOf(MainActivity.getMapZoom(context)) }
@@ -440,12 +602,7 @@ fun VideoRecorderApp(
     var showMap by remember { mutableStateOf(uiSettings["show_map"] as Boolean) }
     var showCoordinates by remember { mutableStateOf(uiSettings["show_coordinates"] as Boolean) }
     var showAddress by remember { mutableStateOf(uiSettings["show_address"] as Boolean) }
-
-    // position options: "top", "bottom", "hidden"
     var addressPosition by remember { mutableStateOf(uiSettings["address_position"] as String) }
-
-    // Dialog state
-    var showSettingsDialog by remember { mutableStateOf(false) }
 
     // Update time every second
     LaunchedEffect(Unit) {
@@ -541,6 +698,7 @@ fun VideoRecorderApp(
                 // On any error, try Google Play Services as fallback
                 useGooglePlayServicesLocation(context, locationListener)
                 gpsStatus = "Location Error, Using Google Play Services"
+//                println(e)
             }
         } else {
             gpsStatus = "Location Permission Denied"
@@ -558,19 +716,30 @@ fun VideoRecorderApp(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
-                        showSettingsDialog = true
+                        if (!isRecordingMode) {
+                            showSettingsDialog = true
+                        }
+                    },
+                    onLongPress = {
+                        // Long press to stop recording
+                        if (isRecordingMode) {
+                            mainActivity.stopScreenRecording()
+                        }
                     }
                 )
             }
     ) {
-        // Camera Preview
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
-            onVideoCaptureReady = onVideoCaptureReady
+            cameraMode = cameraMode,
+            onVideoCaptureReady = {
+                videoCapture = it
+                onVideoCaptureReady(it)
+            },
+            onImageCaptureReady = { imageCapture = it }
         )
 
-        // Top status bar with GPS information
-        if (showTopBar){
+        if (showTopBar) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -617,7 +786,7 @@ fun VideoRecorderApp(
         var address by remember { mutableStateOf("Loading address...") }
         var mapBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-// Map overlay at bottom center - only show if enabled
+// Map overlay - always show if enabled, even during recording
         if (showMap) {
             // If address should be shown above the map
             if (showAddress && addressPosition == "above_map" && currentLocation != null) {
@@ -625,7 +794,7 @@ fun VideoRecorderApp(
                     modifier = Modifier
                         .width(240.dp)
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 176.dp) // Position it just above the map (150dp + 24dp bottom padding + 2dp gap)
+                        .padding(bottom = 300.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.Black.copy(alpha = 0.7f))
                         .padding(6.dp),
@@ -647,9 +816,9 @@ fun VideoRecorderApp(
             Box(
                 modifier = Modifier
                     .width(240.dp)
-                    .height(150.dp)
+                    .height(280.dp)
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp)
+                    .padding(bottom = 100.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .border(2.dp, Color.White, RoundedCornerShape(12.dp))
                     .background(Color(0xFFE8E8E8))
@@ -721,7 +890,7 @@ fun VideoRecorderApp(
                                     val mapboxUrl = "https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/" +
                                             "pin-s+ff0000(${location.longitude},${location.latitude})/" +
                                             "${location.longitude},${location.latitude},${mapZoom},0/" +
-                                            "240x150@2x" +
+                                            "240x180@2x" +
                                             "?access_token=$mapboxKey"
 
                                     Log.d("MapDebug", "Loading Mapbox map with zoom level $mapZoom")
@@ -758,12 +927,12 @@ fun VideoRecorderApp(
                                     withContext(Dispatchers.IO) {
                                         val geoapifyUrl = "https://maps.geoapify.com/v1/staticmap" +
                                                 "?style=osm-carto" +
-                                                "&width=240&height=150" +
+                                                "&width=240&height=180" +
                                                 "&center=lonlat:${location.longitude},${location.latitude}" +
                                                 "&zoom=${mapZoom}" +
                                                 "&marker=lonlat:${location.longitude},${location.latitude};color:%23ff0000;size:medium" +
                                                 "&apiKey=$geoapifyKey"
-
+//TODO: Be able to set map size and padding in settings?
                                         Log.d("MapDebug", "Trying Geoapify map with zoom level $mapZoom")
 
                                         val url = URL(geoapifyUrl)
@@ -871,6 +1040,96 @@ fun VideoRecorderApp(
                     }
                 }
             }
+        }
+
+        // Camera controls - only show when not recording
+        if (!isRecordingMode) {
+            // Mode toggle - top right
+            CameraModeToggle(
+                currentMode = cameraMode,
+                onModeChanged = { newMode ->
+                    cameraMode = newMode
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            )
+
+            // Photo or video button - bottom center
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp)
+            ) {
+                if (cameraMode == CameraMode.PHOTO) {
+                    // Photo capture button
+                    IconButton(
+                        onClick = {
+                            imageCapture?.let { capture ->
+                                MediaUtils.capturePhoto(
+                                    context = context,
+                                    imageCapture = capture,
+                                    location = currentLocation,
+                                    onPhotoSaved = { uri ->
+                                        Toast.makeText(context, "Photo saved with location data", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = { error ->
+                                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                        },
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PhotoCamera,
+                            contentDescription = "Take Photo",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                } else if (useInAppRecording) {
+                    // Video recording button - only if in-app recording is enabled
+                    IconButton(
+                        onClick = {
+                            mainActivity.prepareForScreenRecording()
+                        },
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Videocam,
+                            contentDescription = "Start Recording",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                } else {
+                    // Instruction for system recorder
+//                    Box(
+//                        modifier = Modifier
+//                            .clip(RoundedCornerShape(16.dp))
+//                            .background(Color.Black.copy(alpha = 0.7f))
+//                            .padding(8.dp)
+//                    ) {
+//                        Text(
+//                            text = "Use system screen recorder",
+//                            color = Color.White,
+//                            fontSize = 12.sp
+//                        )
+//                    }
+                }
+            }
+        }
+
+        // Minimal recording indicator
+        if (isRecordingMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .size(8.dp)
+                    .background(Color.Red, CircleShape)
+            )
         }
 
         // Settings dialog
@@ -1105,6 +1364,49 @@ fun VideoRecorderApp(
                         }
 
                         item {
+                            // Recording Options
+                            Text("Recording Options", fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp, top = 8.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text("Use In-App Video Recording")
+                                    Text(
+                                        "May affect performance",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+
+                                androidx.compose.material3.Switch(
+                                    checked = useInAppRecording,
+                                    onCheckedChange = { newValue ->
+                                        if (newValue) {
+                                            // Show warning dialog first
+                                            showSettingsDialog = false // Hide settings temporarily
+                                            MainActivity.showInAppRecordingWarningDialog(context) {
+                                                useInAppRecording = true
+                                                MainActivity.saveInAppRecordingSettings(context, true)
+                                                showSettingsDialog = true // Show settings again
+                                            }
+                                        } else {
+                                            useInAppRecording = false
+                                            MainActivity.saveInAppRecordingSettings(context, false)
+                                        }
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        }
+
+                        item {
                             Text("API Keys", fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = 8.dp))
 
@@ -1170,34 +1472,52 @@ fun MainActivity.Companion.getUiVisibilitySettings(context: Context): Map<String
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
-    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit
+    cameraMode: CameraMode = CameraMode.VIDEO,
+    onVideoCaptureReady: (VideoCapture<Recorder>) -> Unit,
+    onImageCaptureReady: (ImageCapture) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
 
-    LaunchedEffect(previewView) {
+    LaunchedEffect(previewView, cameraMode) {
         val cameraProvider = context.getCameraProvider()
         val preview = androidx.camera.core.Preview.Builder().build()
         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
         preview.surfaceProvider = previewView.surfaceProvider
 
-        val recorder = Recorder.Builder()
-            .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
-            .build()
-        val videoCapture = VideoCapture.withOutput(recorder)
-
         try {
             cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(
-                lifecycleOwner,
-                cameraSelector,
-                preview,
-                videoCapture
-            )
 
-            onVideoCaptureReady(videoCapture)
+            if (cameraMode == CameraMode.VIDEO) {
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+                    .build()
+                val videoCapture = VideoCapture.withOutput(recorder)
+
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    videoCapture
+                )
+
+                onVideoCaptureReady(videoCapture)
+            } else {
+                val imageCapture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .build()
+
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    imageCapture
+                )
+
+                onImageCaptureReady(imageCapture)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -1208,7 +1528,6 @@ fun CameraPreview(
         modifier = modifier
     )
 }
-
 suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutine { continuation ->
     ProcessCameraProvider.getInstance(this).also { future ->
         future.addListener({
