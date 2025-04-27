@@ -98,8 +98,9 @@ jobs:
         
       - name: Update Version Code and Version Name
         run: |
-          sed -i "s/versionCode = [0-9]*/versionCode = ${{needs.prepare-version.outputs.base_version_code}}/" $BUILD_GRADLE_PATH
-          sed -i "s/versionName = \"${{needs.prepare-version.outputs.old_version_name}}\"/versionName = \"${{needs.prepare-version.outputs.version_name}}\"/" $BUILD_GRADLE_PATH
+          git pull
+          # sed -i "s/versionCode = [0-9]*/versionCode = ${{needs.prepare-version.outputs.base_version_code}}/" $BUILD_GRADLE_PATH
+          # sed -i "s/versionName = \"${{needs.prepare-version.outputs.old_version_name}}\"/versionName = \"${{needs.prepare-version.outputs.version_name}}\"/" $BUILD_GRADLE_PATH
           
       - name: Decode Keystore
         run: |
