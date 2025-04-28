@@ -5,6 +5,7 @@ Have tried manual video recording options but the overlay wouldn't get saved to 
 Double tapping the screen opens up the settings menu where the geoapify and mapbox api keys can be inserted. You will have to create an account and just add the api key from the website. (Have tried various leaflet options but none of them worked as intended..)
 
 FEATURES
+
 * No ads (Almost all of the play store ones have ads in them)
 * FOSS
 * Clean, fast and lightweight
