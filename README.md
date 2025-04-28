@@ -12,6 +12,10 @@ Check the fdroid description for more info
     alt="Get it on F-Droid"
     height="80">](https://f-droid.org/packages/org.app.geotagvideocamera)
 
+[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
+    alt="Get it on IzzyOnDroid"
+    height="80">](https://apt.izzysoft.de/packages/org.app.geotagvideocamera)
+
 ##
 
 License: [GNU GPLv3](https://www.gnu.org/licenses/gpl-3.0.en.html)

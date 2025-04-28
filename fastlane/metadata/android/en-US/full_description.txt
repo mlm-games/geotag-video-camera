@@ -1,13 +1,14 @@
-  An app which displays an overlay of a map along with the coordinates on screen which can be used via screen recordings (uses mapbox or geoaplify apis).
+An app which displays an overlay of a map along with the coordinates on screen which can be used via screen recordings (uses mapbox or geoaplify apis).
 
-  Have tried manual video recording options but the overlay wouldn't get saved to the final recording properly or needs frame by frame processing to insert the overlay which would be resource intensive.
-  
-  Double tapping the screen opens up the settings menu where the geoapify and mapbox api keys can be inserted. You will have to create an account and just add the api key from the website. (Have tried various leaflet options but none of them worked as intended..)
+Have tried manual video recording options but the overlay wouldn't get saved to the final recording properly or needs frame by frame processing to insert the overlay which would be resource intensive.
 
-  FEATURES
-  * No ads (Almost all of the play store ones have ads in them)
-  * FOSS
-  * Clean, fast and lightweight
+Double tapping the screen opens up the settings menu where the geoapify and mapbox api keys can be inserted. You will have to create an account and just add the api key from the website. (Have tried various leaflet options but none of them worked as intended..)
 
-  HOW TO USE
-  * Just record your screen or take a screenshot to get the photo or video with the overlay.
+FEATURES
+* No ads (Almost all of the play store ones have ads in them)
+* FOSS
+* Clean, fast and lightweight
+
+HOW TO USE
+
+* Just record your screen or take a screenshot to get the photo or video with the overlay.

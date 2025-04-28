@@ -627,9 +627,9 @@ fun VideoRecorderApp(
         }
 
         // Save the listener for debug purposes
-        if (context is MainActivity) {
-            context.debugLocationListener = locationListener
-        }
+//        if (context is MainActivity) {
+//            context.debugLocationListener = locationListener
+//        }
 
         var locationJob: Job? = null
 
