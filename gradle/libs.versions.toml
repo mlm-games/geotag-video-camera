@@ -44,7 +44,7 @@ androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycl
 androidx-camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "cameraVideo" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
-microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.4.240913" }
+microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.6.244735" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 
 [plugins]
