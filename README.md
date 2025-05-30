@@ -6,12 +6,11 @@ Check the fdroid description for more info
 
 ## Install
 
-#### Install from [F-Droid](...) (Not yet) or download the APK from the [latest release](https://github.com/mlm-games/geotag-video-camera/releases/).
+#### Install from F-Droid, IzzyOnDroid or download the APK the latest APK from the [Releases Section](https://github.com/mlm-games/geotag-video-camera/releases/latest).
 
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
     alt="Get it on F-Droid"
     height="80">](https://f-droid.org/packages/org.app.geotagvideocamera)
-
 [<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
     alt="Get it on IzzyOnDroid"
     height="80">](https://apt.izzysoft.de/packages/org.app.geotagvideocamera)
