@@ -139,7 +139,7 @@ jobs:
             if [ -f "$apk" ]; then
               arch=$(echo "$apk" | grep -oE '(arm64-v8a|armeabi-v7a|x86_64|x86)')
               if [ -n "$arch" ]; then
-                cp "$apk" "artifacts/cclauncher-${{ needs.prepare-version.outputs.version_name }}-${arch}.apk"
+                cp "$apk" "artifacts/geotag_camera-${{ needs.prepare-version.outputs.version_name }}-${arch}.apk"
               fi
             fi
           done
