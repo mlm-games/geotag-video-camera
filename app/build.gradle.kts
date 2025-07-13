@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace = "com.app.geotagvideocamera"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.app.geotagvideocamera"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 140
         versionName = "1.2.3"
 
