@@ -1476,7 +1476,7 @@ fun MainActivity.Companion.saveUiVisibilitySettings(context: Context, showTopBar
         putBoolean("show_coordinates", showCoordinates)
         putBoolean("show_address", showAddress)
         putString("address_position", addressPosition)
-        putBoolean("show_camera_button", showCamModeButton)
+        putBoolean("show_cam_mode_button", showCamModeButton)
     }
 }
 
