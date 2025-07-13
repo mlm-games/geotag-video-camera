@@ -1,0 +1,7 @@
+- Update android.yml
+- Update build.gradle.kts
+- Add a toggle to hide the top left camera mode button, and rm some warns
+- Update android.yml
+- Try solving #34
+- add raw svg file, and update gradle
+- Update android.yml

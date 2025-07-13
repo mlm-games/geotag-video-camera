@@ -15,8 +15,8 @@ android {
         applicationId = "org.app.geotagvideocamera"
         minSdk = 24
         targetSdk = 35
-        versionCode = 120
-        versionName = "1.2.1"
+        versionCode = 130
+        versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
