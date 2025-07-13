@@ -63,10 +63,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -211,6 +214,7 @@ class MainActivity : ComponentActivity() {
         ).show()
     }
 
+    @Deprecated("This method has been deprecated in favor of using the Activity Result API\n      which brings increased type safety via an {@link ActivityResultContract} and the prebuilt\n      contracts for common intents available in\n      {@link androidx.activity.result.contract.ActivityResultContracts}, provides hooks for\n      testing, and allow receiving results in separate, testable classes independent from your\n      activity. Use\n      {@link #registerForActivityResult(ActivityResultContract, ActivityResultCallback)}\n      with the appropriate {@link ActivityResultContract} and handling the result in the\n      {@link ActivityResultCallback#onActivityResult(Object) callback}.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -600,6 +604,7 @@ fun VideoRecorderApp(
     var showCoordinates by remember { mutableStateOf(uiSettings["show_coordinates"] as Boolean) }
     var showAddress by remember { mutableStateOf(uiSettings["show_address"] as Boolean) }
     var addressPosition by remember { mutableStateOf(uiSettings["address_position"] as String) }
+    var showCamModeButton by remember { mutableStateOf(uiSettings["show_cam_mode_button"] as Boolean) }
 
     // Update time every second
     LaunchedEffect(Unit) {
@@ -1040,7 +1045,7 @@ fun VideoRecorderApp(
         }
 
         // Camera controls - only show when not recording
-        if (!isRecordingMode) {
+        if (!isRecordingMode && showCamModeButton) {
             // Mode toggle - top right
             CameraModeToggle(
                 currentMode = cameraMode,
@@ -1215,13 +1220,13 @@ fun VideoRecorderApp(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Show Top Status Bar")
-                                androidx.compose.material3.Switch(
+                                Switch(
                                     checked = showTopBar,
                                     onCheckedChange = {
                                         showTopBar = it
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     }
                                 )
@@ -1235,13 +1240,13 @@ fun VideoRecorderApp(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Show Map")
-                                androidx.compose.material3.Switch(
+                                Switch(
                                     checked = showMap,
                                     onCheckedChange = {
                                         showMap = it
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     }
                                 )
@@ -1255,19 +1260,37 @@ fun VideoRecorderApp(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Show Coordinates")
-                                androidx.compose.material3.Switch(
+                                Switch(
                                     checked = showCoordinates,
                                     onCheckedChange = {
                                         showCoordinates = it
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     }
                                 )
                             }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Show Camera mode button")
+                                Switch(
+                                    checked = showCamModeButton,
+                                    onCheckedChange = {
+                                        showCamModeButton = it
+                                        MainActivity.saveUiVisibilitySettings(
+                                            context, showTopBar, showMap, showCoordinates,
+                                            showAddress, addressPosition, showCamModeButton
+                                        )
+                                    }
+                                )
+                            }
 
                             Row(
                                 modifier = Modifier
@@ -1277,13 +1300,13 @@ fun VideoRecorderApp(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Show Address")
-                                androidx.compose.material3.Switch(
+                                Switch(
                                     checked = showAddress,
                                     onCheckedChange = {
                                         showAddress = it
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     }
                                 )
@@ -1304,13 +1327,13 @@ fun VideoRecorderApp(
                                         addressPosition = "top"
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     },
                                     modifier = Modifier.weight(1f),
-                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                    colors = ButtonDefaults.textButtonColors(
                                         contentColor = if (addressPosition == "top")
-                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                            MaterialTheme.colorScheme.primary
                                         else Color.Gray
                                     )
                                 ) {
@@ -1322,13 +1345,13 @@ fun VideoRecorderApp(
                                         addressPosition = "bottom"
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     },
                                     modifier = Modifier.weight(1f),
-                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                    colors = ButtonDefaults.textButtonColors(
                                         contentColor = if (addressPosition == "bottom")
-                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                            MaterialTheme.colorScheme.primary
                                         else Color.Gray
                                     )
                                 ) {
@@ -1345,13 +1368,13 @@ fun VideoRecorderApp(
                                         addressPosition = "above_map"
                                         MainActivity.saveUiVisibilitySettings(
                                             context, showTopBar, showMap, showCoordinates,
-                                            showAddress, addressPosition
+                                            showAddress, addressPosition, showCamModeButton
                                         )
                                     },
                                     modifier = Modifier.weight(1f),
-                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                    colors = ButtonDefaults.textButtonColors(
                                         contentColor = if (addressPosition == "above_map")
-                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                            MaterialTheme.colorScheme.primary
                                         else Color.Gray
                                     )
                                 ) {
@@ -1383,7 +1406,7 @@ fun VideoRecorderApp(
                                     )
                                 }
 
-                                androidx.compose.material3.Switch(
+                                Switch(
                                     checked = useInAppRecording,
                                     onCheckedChange = { newValue ->
                                         if (newValue) {
@@ -1445,7 +1468,7 @@ fun VideoRecorderApp(
 
 
 fun MainActivity.Companion.saveUiVisibilitySettings(context: Context, showTopBar: Boolean, showMap: Boolean,
-                             showCoordinates: Boolean, showAddress: Boolean, addressPosition: String) {
+                             showCoordinates: Boolean, showAddress: Boolean, addressPosition: String, showCamModeButton: Boolean) {
     val prefs = context.getSharedPreferences("geotag_prefs", Context.MODE_PRIVATE)
     prefs.edit {
         putBoolean("show_top_bar", showTopBar)
@@ -1453,6 +1476,7 @@ fun MainActivity.Companion.saveUiVisibilitySettings(context: Context, showTopBar
         putBoolean("show_coordinates", showCoordinates)
         putBoolean("show_address", showAddress)
         putString("address_position", addressPosition)
+        putBoolean("show_camera_button", showCamModeButton)
     }
 }
 
@@ -1463,7 +1487,8 @@ fun MainActivity.Companion.getUiVisibilitySettings(context: Context): Map<String
         "show_map" to prefs.getBoolean("show_map", true),
         "show_coordinates" to prefs.getBoolean("show_coordinates", true),
         "show_address" to prefs.getBoolean("show_address", true),
-        "address_position" to prefs.getString("address_position", "top")!!
+        "address_position" to prefs.getString("address_position", "top")!!,
+        "show_cam_mode_button" to prefs.getBoolean("show_cam_mode_button", true)
     )
 }
 
