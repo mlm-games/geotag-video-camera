@@ -143,6 +143,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemUI()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -1259,6 +1266,8 @@ fun VideoRecorderApp(
                                     }
                                 )
                             }
+                            ) {
+                                Text("Show Camera mode button")
 
                             Row(
                                 modifier = Modifier
