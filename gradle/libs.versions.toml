@@ -1,7 +1,7 @@
 [versions]
 agp = "8.11.1"
 appcompat = "1.7.1"
-cameraVersion = "1.5.0-beta01"
+cameraVersion = "1.5.0-beta02"
 constraintlayout = "2.2.1"
 desugar_jdk_libs = "2.1.5"
 kotlin = "2.2.0"
