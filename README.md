@@ -31,7 +31,7 @@ Download the latest APK from the [Releases Section](https://github.com/mlm-games
 
 ## How to Use
 
-1. **First Launch**: Upon first launch, you'll be prompted to enter a map API key. You can get a free key from [Mapbox](https://www.mapbox.com/) or [Geoapify](https://www.geoapify.com/).
+1. **First Launch**: Upon first launch, you'll be prompted to enter a map API key. You can get a free key from [MapTiler](https://www.maptiler.com/) or [Geoapify](https://www.geoapify.com/).
 
 2. **Taking Photos**: 
    - Tap the camera button to take a photo with the current geolocation data embedded as metadata
