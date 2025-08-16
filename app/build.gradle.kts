@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+
 }
 
 kotlin {
@@ -148,6 +149,10 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.exifinterface)
+
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.maplibre.android)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // Testing
     testImplementation(libs.junit)

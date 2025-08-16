@@ -14,6 +14,9 @@ activityCompose = "1.10.1"
 composeBom = "2025.08.00"
 material = "1.12.0"
 exifinterface = "1.4.1"
+datastorePreferences = "1.1.7"
+maplibre = "11.13.0"
+
 
 [libraries]
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -22,6 +25,7 @@ androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "
 androidx-camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "camera" }
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "constraintlayout" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose" }
 androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 desugar_jdk_libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -43,6 +47,8 @@ androidx-camera-view = { group = "androidx.camera", name = "camera-view", versio
 material = { module = "com.google.android.material:material", version.ref = "material" }
 microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.6.244735" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastorePreferences" }
+maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
