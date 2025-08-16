@@ -3,7 +3,6 @@ package com.app.geotagvideocamera.camera
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.util.Size
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -318,7 +317,7 @@ private fun BoxScope.MapCard(
         }
     }
 
-    // Address above map (if selected)
+    // Address below map (if selected)
     if (showAddress && addrPos == 2) {
         Surface(
             color = Color.Black.copy(alpha = 0.7f),
@@ -326,7 +325,7 @@ private fun BoxScope.MapCard(
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 300.dp) // roughly above the map card
+                .padding(bottom = 50.dp) // roughly below the map card
         ) {
             Text(
                 text = address,
