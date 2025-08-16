@@ -3,7 +3,7 @@ name: Android App Releases
 on:
   schedule:
     - cron: '0 0 1 */2 *'  # Every other month on the 1st
-  workflow_dispatch: 
+  workflow_dispatch:
     inputs:
       upload_releases:
         description: 'Upload releases'
@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  JAVA_VERSION: '21'
-  JAVA_DISTRIBUTION: 'corretto'
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
   BUILD_GRADLE_PATH: 'app/build.gradle.kts'
   GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.workers.max=2 -Dorg.gradle.caching=true"
 
@@ -42,27 +42,27 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           cache: 'gradle'
-      
+
       - id: version
         name: Update Version Numbers
         run: |
           OLD_VERSION_CODE=$(grep "versionCode" $BUILD_GRADLE_PATH | head -1 | grep -oE '[0-9]+')
           OLD_VERSION_NAME=$(grep "versionName" $BUILD_GRADLE_PATH | head -1 | grep -oE '"([^"]+)"' | tr -d '"')
-          
+
           NEW_VERSION_CODE=$((OLD_VERSION_CODE + 10))
-          
+
           IFS='.' read -ra VERSION_PARTS <<< "$OLD_VERSION_NAME"
           MINOR=$((VERSION_PARTS[2] + 1))
           VERSION_PARTS[2]=$MINOR
           NEW_VERSION_NAME="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.${VERSION_PARTS[2]}"
-          
+
           BUILD_DATE=$(date +'%Y%m%d')
 
           echo "old_version_name=$OLD_VERSION_NAME" >> $GITHUB_OUTPUT
@@ -70,7 +70,6 @@ jobs:
           echo "version_code=$NEW_VERSION_CODE" >> $GITHUB_OUTPUT
           echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
 
-          # Update build.gradle.kts
           sed -i "s/versionCode = $OLD_VERSION_CODE/versionCode = $NEW_VERSION_CODE/" $BUILD_GRADLE_PATH
           sed -i "s/versionName = \"$OLD_VERSION_NAME\"/versionName = \"$NEW_VERSION_NAME\"/" $BUILD_GRADLE_PATH
 
@@ -99,24 +98,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
-      
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           cache: 'gradle'
-          
+
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-cleanup: true
-          
+
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE }}" > release.keystore.asc
@@ -153,4 +152,3 @@ jobs:
           body: |
             ## What's New
             ${{ needs.prepare-version.outputs.release_notes }}
-           

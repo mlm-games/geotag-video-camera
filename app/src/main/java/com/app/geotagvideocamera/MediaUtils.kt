@@ -76,38 +76,17 @@ object MediaUtils {
 
     /**
      * Embeds location metadata into a captured photo
+     * Use a seekable FileDescriptor; ExifInterface does not persist changes with plain InputStreams.
      */
     private fun embedLocationMetadata(context: Context, uri: Uri, location: Location) {
         try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            if (inputStream != null) {
-                // Create a temporary file to work with
-                val tempFile = File.createTempFile("exif", null, context.cacheDir)
-                tempFile.outputStream().use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-                inputStream.close()
-
-                // Modify the EXIF data in the temp file
-                val exif = ExifInterface(tempFile.path)
+            context.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+                val exif = ExifInterface(pfd.fileDescriptor)
                 exif.setLatLong(location.latitude, location.longitude)
                 if (location.hasAltitude()) {
                     exif.setAltitude(location.altitude)
                 }
                 exif.saveAttributes()
-
-                // Write the modified file back to the content URI
-                val outputStream = context.contentResolver.openOutputStream(uri)
-                if (outputStream != null) {
-                    tempFile.inputStream().use { input ->
-                        input.copyTo(outputStream)
-                    }
-                    outputStream.close()
-                }
-
-                // Clean up
-                tempFile.delete()
-
                 Log.d("MediaUtils", "Location metadata embedded successfully")
             }
         } catch (e: IOException) {

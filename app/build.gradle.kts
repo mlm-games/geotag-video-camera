@@ -26,10 +26,6 @@ android {
         versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // Enable reproducible builds
-//        setProperty("android.enableR8.fullMode", "true")
-//        setProperty("android.injected.testOnly", "false")
     }
 
     dependenciesInfo {
@@ -39,8 +35,7 @@ android {
         includeInBundle = false
     }
 
-
-    // Add support for architecture-specific builds
+    // ABI splits (universal + per-ABI)
     splits {
         abi {
             isEnable = true
@@ -92,9 +87,7 @@ android {
             isDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
         }
-
         debug {
-            // For reproducible builds in debug mode
             isDebuggable = true
         }
     }
@@ -102,11 +95,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // For reproducible builds
         isCoreLibraryDesugaringEnabled = true
     }
 
-    // For reproducible builds
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -115,20 +106,20 @@ android {
         }
     }
 
-    // For reproducible builds - set fixed timestamps
+    // Reproducible archives
     tasks.withType<AbstractArchiveTask>().configureEach {
         isPreserveFileTimestamps = false
         isReproducibleFileOrder = true
     }
 }
 
-// For reproducible builds
+// Reproducible parameter names
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
 }
 
 dependencies {
-    // Core libraries
+    // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -141,7 +132,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
 
-    // Camera
+    // CameraX
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
@@ -158,9 +149,6 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.exifinterface)
 
-    // QR code scanning
-    // implementation(libs.core)
-
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -172,6 +160,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    // For Java 8+ APIs on older Android versions
+    // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 }

@@ -1,21 +1,15 @@
 version: 2
 updates:
-  # Configure updates for Gradle dependencies
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
-    target-branch: "master"  # or your default branch name
-    labels:
-      - "dependencies"
-      - "android"
-      - "security"
+    target-branch: "master"
+    labels: [ "dependencies", "android", "security" ]
 
-    
-  # Configure updates for GitHub Actions
   - package-ecosystem: "github-actions"
-    directory: ".github/worfklows"
+    directory: "/.github/workflows"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
