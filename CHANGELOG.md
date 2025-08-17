@@ -1,3 +1,9 @@
+## v2.1.2
+
+- Downgrade gradle
+- use 512x512 for icon
+
+
 ## v2.1.1
 
 - Fix debug location not working

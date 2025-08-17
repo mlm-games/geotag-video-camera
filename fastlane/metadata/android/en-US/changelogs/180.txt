@@ -1,0 +1,2 @@
+- Downgrade gradle
+- use 512x512 for icon
