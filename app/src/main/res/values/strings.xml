@@ -41,5 +41,5 @@
     <string name="address_position">Address position</string>
     <string name="address_inside_top">Inside (top)</string>
     <string name="address_inside_bottom">Inside (bottom)</string>
-    <string name="address_above_map">Above map</string>
+    <string name="address_below_map">Below map</string>
 </resources>

@@ -111,7 +111,7 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
         entries = listOf(
             R.string.address_inside_top,
             R.string.address_inside_bottom,
-            R.string.address_above_map
+            R.string.address_below_map
         ),
         defaultIndex = 0
     ),
