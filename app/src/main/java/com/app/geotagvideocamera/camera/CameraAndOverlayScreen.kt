@@ -112,9 +112,17 @@ fun CameraAndOverlayScreen(
 
     // Location tracker
     val tracker = remember { LocationTracker(context) }
-    LaunchedEffect(locGranted) {
-        if (locGranted) tracker.start() else tracker.stop()
+
+    LaunchedEffect(locGranted, settings.debugLocation) {
+        if (settings.debugLocation) {
+            tracker.stop()
+            // Golden Gate Bridge
+            tracker.pushDebugLocation(lat = 37.8199, lon = -122.4783)
+        } else {
+            if (locGranted) tracker.start() else tracker.stop()
+        }
     }
+
     val locationUi by tracker.state.collectAsStateWithLifecycle()
 
     // UI
@@ -170,9 +178,7 @@ fun CameraAndOverlayScreen(
 
         AndroidView(
             factory = { previewView },
-            modifier = Modifier
-                .fillMaxSize()
-                .zIndex(0f),
+            modifier = Modifier.fillMaxSize().zIndex(0f),
         )
 
         if (settings.showTopBar) {

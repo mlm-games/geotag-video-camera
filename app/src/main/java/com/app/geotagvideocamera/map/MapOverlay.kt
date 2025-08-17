@@ -1,29 +1,35 @@
 package com.app.geotagvideocamera.map
 
 import android.view.ViewGroup
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.app.geotagvideocamera.settings.SettingsState
-import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 
 @Composable
 fun MapOverlay(
     settings: SettingsState,
-    lat: Double?,   // pass from caller
+    lat: Double?,
     lon: Double?,
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var styleReady by remember { mutableStateOf(false) }
+    var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
 
-    // Create MapView once
     val mapView = remember {
         MapView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
@@ -35,7 +41,6 @@ fun MapOverlay(
     }
 
     DisposableEffect(lifecycleOwner, mapView) {
-        // Advance to current state (because observer won't replay)
         val current = lifecycleOwner.lifecycle.currentState
         if (current.isAtLeast(Lifecycle.State.STARTED)) mapView.onStart()
         if (current.isAtLeast(Lifecycle.State.RESUMED)) mapView.onResume()
@@ -53,59 +58,48 @@ fun MapOverlay(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            // best-effort symmetrical shutdown
             mapView.onPause()
             mapView.onStop()
             mapView.onDestroy()
         }
     }
 
-    // Load style only when provider/URL changes
-    val styleUrl = remember(settings.mapProviderIndex, settings.styleUrl, settings.maptilerApiKey, settings.geoapifyApiKey) {
-        resolveStyleUrl(settings)
+    val styleUrl = remember(
+        settings.mapProviderIndex, settings.styleUrl, settings.maptilerApiKey, settings.geoapifyApiKey
+    ) { resolveStyleUrl(settings) }
+
+    // Helper: absolute recenter with non-null target (need to reset zoom option in settings
+    fun recenter(map: MapLibreMap, lat: Double?, lon: Double?, zoom: Double) {
+        val target: LatLng = when {
+            lat != null && lon != null -> LatLng(lat, lon)
+            map.cameraPosition.target != null -> map.cameraPosition.target!! // safe due to check
+            else -> LatLng(0.0, 0.0)
+        }
+        map.moveCamera(
+            org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom(target, zoom)
+        )
     }
+
     LaunchedEffect(styleUrl) {
-
-
-
         styleReady = false
         mapView.getMapAsync { map ->
+            mapRef = map
+
+            map.uiSettings.focalPoint = null
+
             map.setStyle(styleUrl) {
                 styleReady = true
-                // set initial camera when style is ready
-                val target = if (lat != null && lon != null) LatLng(lat, lon) else map.cameraPosition.target ?: LatLng(0.0, 0.0)
-                map.cameraPosition = CameraPosition.Builder()
-                    .target(target)
-                    .zoom(settings.mapZoom.toDouble())
-                    .build()
+                recenter(map, lat, lon, settings.mapZoom.toDouble())
             }
         }
     }
 
-    // Update camera when location or zoom changes (after style is ready)
+    // Apply updates after style is ready
     LaunchedEffect(lat, lon, settings.mapZoom, styleReady) {
+        val map = mapRef ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
-        if (lat != null && lon != null) {
-            mapView.getMapAsync { map ->
-                map.cameraPosition = CameraPosition.Builder()
-                    .target(LatLng(lat, lon))
-                    .zoom(settings.mapZoom.toDouble())
-                    .build()
-            }
-        } else {
-            // still apply zoom to whatever the current target is
-            mapView.getMapAsync { map ->
-                val currentTarget = map.cameraPosition.target ?: LatLng(0.0, 0.0)
-                map.cameraPosition = CameraPosition.Builder()
-                    .target(currentTarget)
-                    .zoom(settings.mapZoom.toDouble())
-                    .build()
-            }
-        }
+        recenter(map, lat, lon, settings.mapZoom.toDouble())
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { mapView }
-    )
+    AndroidView(modifier = modifier, factory = { mapView })
 }

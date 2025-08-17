@@ -59,6 +59,35 @@ class LocationTracker(private val context: Context) {
         }
     }
 
+    fun pushDebugLocation(lat: Double, lon: Double) {
+        val ui = LocationUi(
+            latitude = lat,
+            longitude = lon,
+            accuracyMeters = 5f,
+            speedMps = null,
+            address = null
+        )
+        _state.value = ui
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (geocoder == null) geocoder = Geocoder(context, Locale.getDefault())
+                val g = geocoder ?: return@launch
+                val addresses = g.getFromLocation(lat, lon, 1)
+                val line = addresses?.firstOrNull()?.getAddressLine(0)
+                if (line != null) {
+                    _state.value = _state.value?.copy(address = line)
+                } else {
+                    // fallback label if geocoder returns nothing
+                    _state.value = _state.value?.copy(address = "Golden Gate Bridge, San Francisco, CA")
+                }
+            } catch (_: Throwable) {
+                _state.value = _state.value?.copy(address = "Golden Gate Bridge, San Francisco, CA")
+            }
+        }
+    }
+
+
     @SuppressLint("MissingPermission")
     fun start() {
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
