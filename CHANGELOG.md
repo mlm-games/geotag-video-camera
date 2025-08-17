@@ -1,3 +1,10 @@
+## v2.1.1
+
+- Fix debug location not working
+- Compact UI reduces padding, (doesn't seem to affect mapcard)
+- Fix debug setting text overflow, improve theme option corners, rename "above map" to "below map"
+
+
 ## 2.0.2
 
 
