@@ -56,10 +56,10 @@ import com.app.geotagvideocamera.settings.SettingsViewModel
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import androidx.camera.view.PreviewView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.zIndex
 
 
-@SuppressLint("MissingPermission")
 @Composable
 fun CameraAndOverlayScreen(
     settingsVm: SettingsViewModel,
@@ -140,7 +140,6 @@ fun CameraAndOverlayScreen(
             }
         }
 
-
         // Bind whenever provider/permission/mode changes
         LaunchedEffect(camGranted, cameraProvider.value, mode) {
             if (!camGranted) return@LaunchedEffect
@@ -171,17 +170,18 @@ fun CameraAndOverlayScreen(
 
         AndroidView(
             factory = { previewView },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
                 .zIndex(0f),
         )
 
         if (settings.showTopBar) {
             TopStatusBar(
                 timeText = timeText,
-                accuracy = locationUi?.accuracyMeters
+                accuracy = locationUi?.accuracyMeters,
+                dense = settings.compactUi
             )
         }
-
 
         if (settings.showMap) {
             MapCard(
@@ -208,22 +208,26 @@ fun CameraAndOverlayScreen(
 }
 
 @Composable
-private fun TopStatusBar(timeText: String, accuracy: Float?) {
+private fun TopStatusBar(timeText: String, accuracy: Float?, dense: Boolean) {
+    val padV = if (dense) 4.dp else 6.dp
+    val corner = if (dense) 6.dp else 8.dp
+    val timeSize = if (dense) 12.sp else 14.sp
+    val accSize = if (dense) 10.sp else 12.sp
+
     Surface(
         color = Color.Black.copy(alpha = 0.5f),
         tonalElevation = 0.dp,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(corner),
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp, start = 8.dp, end = 8.dp)
-//            .align(Alignment.TopCenter)
     ) {
         Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            Modifier.padding(horizontal = 10.dp, vertical = padV),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(timeText, color = Color.White, fontSize = 14.sp)
+            Text(timeText, color = Color.White, fontSize = timeSize)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val col = when {
                     (accuracy ?: Float.MAX_VALUE) <= 10f -> Color(0xFF00C853) // green
@@ -237,7 +241,7 @@ private fun TopStatusBar(timeText: String, accuracy: Float?) {
                 Text(
                     text = "±${accuracy?.toInt() ?: 0} m",
                     color = Color.White,
-                    fontSize = 12.sp
+                    fontSize = accSize
                 )
             }
         }
@@ -249,9 +253,8 @@ private fun BoxScope.MapCard(
     settings: SettingsState,
     loc: LocationUi?
 ) {
-    // Sizes roughly matching the old UI
-    val cardWidth = 240.dp
-    val cardHeight = 280.dp
+    val cardWidth = if (settings.compactUi) 200.dp else 240.dp
+    val cardHeight = if (settings.compactUi) 220.dp else 280.dp
 
     // Decide where to place the address text
     val address = loc?.address ?: "—"
@@ -288,7 +291,7 @@ private fun BoxScope.MapCard(
                 Text(
                     text = address,
                     color = Color.White,
-                    fontSize = 10.sp,
+                    fontSize = if (settings.compactUi) 9.sp else 10.sp,
                     modifier = Modifier.padding(6.dp),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
@@ -309,7 +312,7 @@ private fun BoxScope.MapCard(
                 Text(
                     text = coordText,
                     color = Color.White,
-                    fontSize = 10.sp,
+                    fontSize = if (settings.compactUi) 9.sp else 10.sp,
                     modifier = Modifier.padding(6.dp),
                     maxLines = 1
                 )
@@ -325,12 +328,12 @@ private fun BoxScope.MapCard(
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 50.dp) // roughly below the map card
+                .padding(bottom = if (settings.compactUi) 44.dp else 50.dp) // roughly below the map card
         ) {
             Text(
                 text = address,
                 color = Color.White,
-                fontSize = 10.sp,
+                fontSize = if (settings.compactUi) 9.sp else 10.sp,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
@@ -344,24 +347,28 @@ private fun OverlayHud(
     settings: SettingsState,
     loc: LocationUi?
 ) {
+    val chipFont = if (settings.compactUi) 12.sp else 14.sp
+    val chipPadH = if (settings.compactUi) 8.dp else 10.dp
+    val chipPadV = if (settings.compactUi) 4.dp else 6.dp
+    val chipCorner = if (settings.compactUi) 6.dp else 8.dp
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom,
         modifier = Modifier
             .fillMaxWidth()
             .padding(12.dp),
-
     ) {
         if (false) {
             Surface(
                 color = Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(chipCorner)
             ) {
                 Text(
                     text = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "—",
                     color = Color.White,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    fontSize = 16.sp
+                    modifier = Modifier.padding(horizontal = chipPadH, vertical = chipPadV),
+                    fontSize = chipFont
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -374,13 +381,13 @@ private fun OverlayHud(
             if (settings.showSpeed) {
                 Surface(
                     color = Color.Black.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(chipCorner)
                 ) {
                     Text(
                         text = loc?.let { formatSpeed(it.speedMps ?: 0f, settings.unitsIndex) } ?: "—",
                         color = Color.White,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        fontSize = 14.sp
+                        modifier = Modifier.padding(horizontal = chipPadH, vertical = chipPadV),
+                        fontSize = chipFont
                     )
                 }
             }
@@ -388,13 +395,13 @@ private fun OverlayHud(
             if (settings.showGpsStatus) {
                 Surface(
                     color = Color.Black.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(chipCorner)
                 ) {
                     Text(
                         text = "±${loc?.accuracyMeters?.toInt() ?: 0} m",
                         color = Color.White,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        fontSize = 14.sp
+                        modifier = Modifier.padding(horizontal = chipPadH, vertical = chipPadV),
+                        fontSize = chipFont
                     )
                 }
             }
@@ -404,14 +411,14 @@ private fun OverlayHud(
             Spacer(Modifier.height(6.dp))
             Surface(
                 color = Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(chipCorner),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = loc?.address ?: "—",
                     color = Color.White,
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                        .padding(horizontal = chipPadH, vertical = chipPadV),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
