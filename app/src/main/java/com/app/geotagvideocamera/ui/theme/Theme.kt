@@ -65,10 +65,4 @@ fun GeotagVideoCameraTheme(
         shapes = shapes,
         content = content
     )
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
 }
