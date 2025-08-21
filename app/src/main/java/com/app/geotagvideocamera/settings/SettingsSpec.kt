@@ -72,7 +72,7 @@ data class SettingsState(
 
     // Map
     val mapProviderIndex: Int = 0, // 0 MapLibre, 1 MapTiler, 2 Geoapify
-    val styleUrl: String = "",     // custom style for MapLibre or advanced users (just
+    val styleUrl: String = "",
     val maptilerApiKey: String = "",
     val geoapifyApiKey: String = "",
 
@@ -80,7 +80,8 @@ data class SettingsState(
     val hideModeButton: Boolean = true,
 
     // System
-    val debugLocation: Boolean = false
+    val debugLocation: Boolean = false,
+    val demoNoticeShown: Boolean = false 
 )
 
 val SettingsSpecs: List<SettingSpec<*>> = listOf(

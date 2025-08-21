@@ -36,6 +36,10 @@ android {
         includeInBundle = false
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true // for Robolectric test
+    }
+
     val enableApkSplits = (providers.gradleProperty("enableApkSplits").orNull ?: "true").toBoolean()
     val targetAbi = providers.gradleProperty("targetAbi").orNull
 

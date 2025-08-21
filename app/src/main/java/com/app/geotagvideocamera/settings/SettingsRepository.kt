@@ -1,7 +1,11 @@
 package com.app.geotagvideocamera.settings
 
 import android.content.Context
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -29,7 +33,6 @@ class SettingsRepository(private val context: Context) {
                 showTopBar = p[booleanPreferencesKey("showTopBar")] ?: false,
                 addressPositionIndex = p[intPreferencesKey("addressPositionIndex")] ?: 0,
 
-
                 // Map
                 mapProviderIndex = p[intPreferencesKey("mapProviderIndex")] ?: 0,
                 styleUrl = p[stringPreferencesKey("styleUrl")] ?: "",
@@ -40,7 +43,8 @@ class SettingsRepository(private val context: Context) {
                 hideModeButton = p[booleanPreferencesKey("hideModeButton")] ?: true,
 
                 // System
-                debugLocation = p[booleanPreferencesKey("debugLocation")] ?: false
+                debugLocation = p[booleanPreferencesKey("debugLocation")] ?: false,
+                demoNoticeShown = p[booleanPreferencesKey("demoNoticeShown")] ?: false
             )
         }
 
@@ -52,6 +56,13 @@ class SettingsRepository(private val context: Context) {
                 is SliderSpec -> prefs[floatPreferencesKey(spec.id)] = alignToStep((value as Float), spec)
                 is TextSpec -> prefs[stringPreferencesKey(spec.id)] = (value as String)
             }
+        }
+    }
+
+    // Simple internal helper to set a boolean flag by id (for non-UI/system keys).
+    suspend fun setFlag(id: String, value: Boolean) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[booleanPreferencesKey(id)] = value
         }
     }
 

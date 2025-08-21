@@ -1,7 +1,6 @@
 package com.app.geotagvideocamera.camera
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -19,12 +19,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,10 +57,6 @@ import com.app.geotagvideocamera.settings.SettingsState
 import com.app.geotagvideocamera.settings.SettingsViewModel
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
-import androidx.camera.view.PreviewView
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.zIndex
-
 
 @Composable
 fun CameraAndOverlayScreen(
@@ -210,6 +208,43 @@ fun CameraAndOverlayScreen(
                     .padding(12.dp)
             )
         }
+
+        // One-time notice: using demo tiles (MapLibre demo) → suggest MapTiler/Geoapify
+        val usingDemoTiles = remember(settings) { usesDemoTiles(settings) }
+        if (usingDemoTiles && !settings.demoNoticeShown) {
+            AlertDialog(
+                onDismissRequest = { settingsVm.markDemoNoticeShown() },
+                title = { Text("Map tiles notice") },
+                text = {
+                    Text(
+                        "The app initially starts with MapLibre demo tiles. They are minimal maps that do not show terrain ( only for demonstration purposes) " +
+                                "For better maps, switch to MapTiler or Geoapify in Settings → Map and enter your API key. " +
+                                "Double‑tap anywhere to open Settings."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { settingsVm.markDemoNoticeShown() }) {
+                        Text("Got it")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        settingsVm.markDemoNoticeShown()
+                        onOpenSettings()
+                    }) {
+                        Text("Open Settings")
+                    }
+                }
+            )
+        }
+    }
+}
+
+private fun usesDemoTiles(s: SettingsState): Boolean {
+    return when (s.mapProviderIndex) {
+        0 -> s.styleUrl.isBlank() // MapLibre provider with no custom style → demo tiles
+        1 -> s.maptilerApiKey.isBlank() // MapTiler with no key → fallback demo
+        else -> s.geoapifyApiKey.isBlank() // Geoapify no key → fallback demo
     }
 }
 
@@ -365,21 +400,6 @@ private fun OverlayHud(
             .fillMaxWidth()
             .padding(12.dp),
     ) {
-        if (false) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(chipCorner)
-            ) {
-                Text(
-                    text = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "—",
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = chipPadH, vertical = chipPadV),
-                    fontSize = chipFont
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-        }
-
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -410,24 +430,6 @@ private fun OverlayHud(
                         fontSize = chipFont
                     )
                 }
-            }
-        }
-
-        if (false) { // Address on top, old format is better, left it for a setting in future
-            Spacer(Modifier.height(6.dp))
-            Surface(
-                color = Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(chipCorner),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = loc?.address ?: "—",
-                    color = Color.White,
-                    modifier = Modifier
-                        .padding(horizontal = chipPadH, vertical = chipPadV),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
     }
