@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RadioButtonChecked
@@ -324,14 +325,14 @@ fun CameraAndOverlayScreen(
                             }
                         }
                         CameraMode.VIDEO -> {
-                            // Start screen recording via MediaProjection
-                            val intent = projectionManager.createScreenCaptureIntent()
-                            screenCaptureLauncher.launch(intent)
+                              Toast.makeText(context, "Use android's screen recording feature (from Settings or Quick Tiles", Toast.LENGTH_SHORT).show()
+//                            val intent = projectionManager.createScreenCaptureIntent()
+//                            screenCaptureLauncher.launch(intent)
                         }
                     }
                 },
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
+                    .align(Alignment.BottomCenter)
                     .padding(16.dp),
                 containerColor = Color(0xFF1E88E5),
                 contentColor = Color.White
