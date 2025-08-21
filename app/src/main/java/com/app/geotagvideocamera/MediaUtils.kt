@@ -2,8 +2,8 @@ package com.app.geotagvideocamera
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.location.Location
-import androidx.exifinterface.media.ExifInterface
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
@@ -14,8 +14,10 @@ import android.widget.Toast
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.core.content.ContextCompat
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -92,6 +94,50 @@ object MediaUtils {
         } catch (e: IOException) {
             Log.e("MediaUtils", "Error embedding location metadata", e)
         }
+    }
+
+    /**
+     * Save a bitmap to MediaStore under Pictures/GeotagCamera as a JPEG.
+     */
+    fun saveBitmapToPictures(context: Context, bitmap: Bitmap): Uri? {
+        val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
+            .format(System.currentTimeMillis())
+        val resolver = context.contentResolver
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "geotag_${name}.jpg")
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/GeotagCamera")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        if (uri == null) {
+            Toast.makeText(context, "Unable to save screenshot", Toast.LENGTH_SHORT).show()
+            return null
+        }
+
+        try {
+            resolver.openOutputStream(uri, "w")?.use { out: OutputStream ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)) {
+                    throw IOException("Bitmap compress() returned false")
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, contentValues, null, null)
+            }
+            return uri
+        } catch (e: Exception) {
+            Log.e("MediaUtils", "Failed to save bitmap", e)
+            // Cleanup the row if something failed
+            runCatching { resolver.delete(uri, null, null) }
+            Toast.makeText(context, "Failed to save screenshot: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+        return null
     }
 
     /**

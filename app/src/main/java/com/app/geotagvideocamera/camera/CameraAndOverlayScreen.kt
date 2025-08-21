@@ -1,8 +1,17 @@
 package com.app.geotagvideocamera.camera
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.MediaRecorder
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -19,35 +28,49 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.core.view.drawToBitmap
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.app.geotagvideocamera.CameraMode
 import com.app.geotagvideocamera.CameraModeToggle
+import com.app.geotagvideocamera.MediaUtils
 import com.app.geotagvideocamera.location.LocationTracker
 import com.app.geotagvideocamera.location.LocationUi
 import com.app.geotagvideocamera.location.formatLatLon
@@ -55,6 +78,7 @@ import com.app.geotagvideocamera.location.formatSpeed
 import com.app.geotagvideocamera.map.MapOverlay
 import com.app.geotagvideocamera.settings.SettingsState
 import com.app.geotagvideocamera.settings.SettingsViewModel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -65,6 +89,7 @@ fun CameraAndOverlayScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val rootView = LocalView.current
 
     // Observe settings
     val settings by settingsVm.state.collectAsStateWithLifecycle()
@@ -123,9 +148,74 @@ fun CameraAndOverlayScreen(
 
     val locationUi by tracker.state.collectAsStateWithLifecycle()
 
-    // UI
+    // UI states
     var mode by remember { mutableStateOf(CameraMode.PHOTO) }
+    var isCapturing by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordingStartNanos by remember { mutableLongStateOf(0L) }
+    val scope = rememberCoroutineScope()
 
+    // MediaProjection / Recording plumbing
+    val projectionManager = remember {
+        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
+    var mediaProjection by remember { mutableStateOf<MediaProjection?>(null) }
+    var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var virtualDisplay by remember { mutableStateOf<VirtualDisplay?>(null) }
+
+    fun stopRecording() {
+        runCatching { virtualDisplay?.release() }.onFailure { /* ignore */ }
+        virtualDisplay = null
+        runCatching { mediaProjection?.stop() }.onFailure { /* ignore */ }
+        mediaProjection = null
+        runCatching {
+            mediaRecorder?.apply {
+                try { stop() } catch (_: Throwable) { /* ignore */ }
+                reset()
+                release()
+            }
+        }.onFailure { /* ignore */ }
+        mediaRecorder = null
+        isRecording = false
+    }
+
+    val screenCaptureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == Activity.RESULT_OK && res.data != null) {
+            val mp = projectionManager.getMediaProjection(res.resultCode, res.data!!)
+            mediaProjection = mp
+
+            val metrics = context.resources.displayMetrics
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+            val density = metrics.densityDpi
+
+            val recorder = MediaUtils.createMediaRecorder(context, width, height)
+            mediaRecorder = recorder
+
+            val surface = recorder.surface
+            virtualDisplay = mp?.createVirtualDisplay(
+                "GeotagScreenRecord",
+                width, height, density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                surface, null, null
+            )
+
+            try {
+                recorder.start()
+                recordingStartNanos = System.nanoTime()
+                isRecording = true
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to start recording: ${e.message}", Toast.LENGTH_SHORT).show()
+                stopRecording()
+            }
+        } else {
+            Toast.makeText(context, "Screen recording permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // UI
     Box(
         Modifier
             .fillMaxSize()
@@ -141,6 +231,7 @@ fun CameraAndOverlayScreen(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
+                // TextureView-based implementation → lets us include it in screenshots.
                 implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 scaleType = PreviewView.ScaleType.FILL_CENTER
             }
@@ -162,9 +253,7 @@ fun CameraAndOverlayScreen(
                     provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
                     else -> null
                 }
-            }.getOrNull()
-
-            if (selector == null) return@LaunchedEffect
+            }.getOrNull() ?: return@LaunchedEffect
 
             runCatching {
                 provider.unbindAll()
@@ -199,13 +288,72 @@ fun CameraAndOverlayScreen(
             loc = locationUi
         )
 
-        if (!settings.hideModeButton) {
+        //cam button hidden during screenshot/recording
+        val controlsHidden = isCapturing || isRecording
+        if (!settings.hideModeButton && !controlsHidden) {
             CameraModeToggle(
                 currentMode = mode,
                 onModeChanged = { mode = it },
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(12.dp)
+            )
+        }
+
+        // Action button:
+        // - PHOTO mode → Screenshot
+        if (!settings.hideModeButton && !controlsHidden) {
+            FloatingActionButton(
+                onClick = {
+                    when (mode) {
+                        CameraMode.PHOTO -> {
+                            isCapturing = true
+                            // Hide the buttons before capture
+                            scope.launch {
+                                withFrameNanos { /* wait one frame so controls are hidden */ }
+                                val bmp = safeDrawToBitmap(rootView)
+                                if (bmp != null) {
+                                    val uri = MediaUtils.saveBitmapToPictures(context, bmp)
+                                    if (uri != null) {
+                                        Toast.makeText(context, "Screenshot saved", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "Failed to capture screenshot", Toast.LENGTH_SHORT).show()
+                                }
+                                isCapturing = false
+                            }
+                        }
+                        CameraMode.VIDEO -> {
+                            // Start screen recording via MediaProjection
+                            val intent = projectionManager.createScreenCaptureIntent()
+                            screenCaptureLauncher.launch(intent)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = Color(0xFF1E88E5),
+                contentColor = Color.White
+            ) {
+                when (mode) {
+                    CameraMode.PHOTO -> Icon(Icons.Outlined.CameraAlt, contentDescription = "Screenshot")
+                    CameraMode.VIDEO -> Icon(Icons.Filled.RadioButtonChecked, contentDescription = "Start recording")
+                }
+            }
+        }
+
+        // Recording bar (shown only while recording)
+        if (isRecording) {
+            RecordingBar(
+                startNanos = recordingStartNanos,
+                onStop = {
+                    stopRecording()
+                    Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
             )
         }
 
@@ -240,6 +388,45 @@ fun CameraAndOverlayScreen(
     }
 }
 
+@Composable
+private fun RecordingBar(
+    startNanos: Long,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var now by remember { mutableLongStateOf(System.nanoTime()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(250)
+            now = System.nanoTime()
+        }
+    }
+    val elapsedSec = ((now - startNanos) / 1_000_000_000L).coerceAtLeast(0)
+    val mm = (elapsedSec / 60).toString().padStart(2, '0')
+    val ss = (elapsedSec % 60).toString().padStart(2, '0')
+
+    Surface(
+        color = Color(0xB3B00020), // semi-transparent red
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Videocam, contentDescription = null, tint = Color.White)
+            Text(text = "$mm:$ss REC", color = Color.White)
+            TextButton(onClick = onStop) {
+                Icon(Icons.Filled.Stop, contentDescription = "Stop", tint = Color.White)
+                Spacer(Modifier.size(6.dp))
+                Text("Stop", color = Color.White)
+            }
+        }
+    }
+}
+
 private fun usesDemoTiles(s: SettingsState): Boolean {
     return when (s.mapProviderIndex) {
         0 -> s.styleUrl.isBlank() // MapLibre provider with no custom style → demo tiles
@@ -247,6 +434,18 @@ private fun usesDemoTiles(s: SettingsState): Boolean {
         else -> s.geoapifyApiKey.isBlank() // Geoapify no key → fallback demo
     }
 }
+
+private suspend fun Context.getCameraProvider(): ProcessCameraProvider =
+    suspendCancellableCoroutine { cont ->
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener(
+            { cont.resume(future.get()) },
+            ContextCompat.getMainExecutor(this)
+        )
+    }
+
+private fun safeDrawToBitmap(view: View): android.graphics.Bitmap? =
+    runCatching { view.rootView.drawToBitmap() }.getOrNull()
 
 @Composable
 private fun TopStatusBar(timeText: String, accuracy: Float?, dense: Boolean) {
@@ -297,12 +496,10 @@ private fun BoxScope.MapCard(
     val cardWidth = if (settings.compactUi) 200.dp else 240.dp
     val cardHeight = if (settings.compactUi) 220.dp else 280.dp
 
-    // Decide where to place the address text
     val address = loc?.address ?: "—"
     val showAddress = settings.showAddress
     val addrPos = settings.addressPositionIndex // 0 = inside top, 1 = inside bottom, 2 = above map
 
-    // Container (bottom-center)
     Box(
         modifier = Modifier
             .align(Alignment.BottomCenter)
@@ -311,7 +508,6 @@ private fun BoxScope.MapCard(
             .clip(RoundedCornerShape(12.dp))
             .border(2.dp, Color.White, RoundedCornerShape(12.dp))
     ) {
-        // Map content
         MapOverlay(
             settings = settings,
             lat = loc?.latitude,
@@ -319,7 +515,6 @@ private fun BoxScope.MapCard(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Address inside map (top/bottom)
         if (showAddress && addrPos in 0..1) {
             val alignment = if (addrPos == 0) Alignment.TopCenter else Alignment.BottomCenter
             Surface(
@@ -340,7 +535,6 @@ private fun BoxScope.MapCard(
             }
         }
 
-        // Coordinates strip (like old, along bottom)
         if (settings.showCoordinates) {
             Surface(
                 color = Color.Black.copy(alpha = 0.7f),
@@ -361,7 +555,6 @@ private fun BoxScope.MapCard(
         }
     }
 
-    // Address below map (if selected)
     if (showAddress && addrPos == 2) {
         Surface(
             color = Color.Black.copy(alpha = 0.7f),
@@ -369,7 +562,7 @@ private fun BoxScope.MapCard(
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (settings.compactUi) 44.dp else 50.dp) // roughly below the map card
+                .padding(bottom = if (settings.compactUi) 44.dp else 50.dp)
         ) {
             Text(
                 text = address,
@@ -434,13 +627,3 @@ private fun OverlayHud(
         }
     }
 }
-
-/* Helpers */
-private suspend fun android.content.Context.getCameraProvider(): ProcessCameraProvider =
-    suspendCancellableCoroutine { cont ->
-        val future = ProcessCameraProvider.getInstance(this)
-        future.addListener(
-            { cont.resume(future.get()) },
-            ContextCompat.getMainExecutor(this)
-        )
-    }
