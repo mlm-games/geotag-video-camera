@@ -15,7 +15,7 @@ composeBom = "2025.09.00"
 material = "1.13.0"
 exifinterface = "1.4.1"
 datastorePreferences = "1.1.7"
-maplibre = "11.13.1"
+maplibre = "11.13.5"
 
 
 [libraries]
