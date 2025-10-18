@@ -9,10 +9,7 @@ A simple CameraX + Compose app that overlays a live map and location info on top
   <a href="https://apt.izzysoft.de/fdroid/index/apk/org.app.geotagvideocamera">
     <img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroidButtonGreyBorder_nofont.png" height="54" alt="Get it at IzzyOnDroid">
   </a>
-   
-  <a href="https://github.com/mlm-games/geotag-video-camera/releases/latest">
-    <img src="https://img.shields.io/badge/Get%20it%20on-GitHub%20Releases-24292e?style=for-the-badge&logo=github&logoColor=white" height="80" alt="Get it on GitHub Releases">
-  </a>
+
 </p>
 
 <p align="center">
@@ -82,4 +79,4 @@ If no key is provided for MapTiler/Geoapify or no custom style URL is set for Ma
 - Issues: https://github.com/mlm-games/mlm-games-geotag-video-camera/issues
 
 ## License
-GPL‑3.0 — see LICENSE.
+GPL‑3.0 — see [LICENSE](LICENSE).
