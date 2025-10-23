@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.2.20"
+kotlin = "2.2.21"
 agp = "8.11.1"
 appcompat = "1.7.1"
 camera = "1.5.1"
