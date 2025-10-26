@@ -4,25 +4,46 @@
     android:viewportWidth="1024"
     android:viewportHeight="1024">
 
-    <group android:scaleX="10.24" android:scaleY="10.24">
+    <group android:scaleX="10.24" android:scaleY="10.74">
+
+        <path
+            android:strokeColor="#FF000000"
+            android:strokeWidth="2.5"
+            android:fillColor="#00000000"
+            android:pathData="M30,40 H70 a4,4 0 0 1 4,4 V62 a4,4 0 0 1 -4,4 H30 a4,4 0 0 1 -4,-4 V44 a4,4 0 0 1 4,-4 Z"/>
+
+        <path
+            android:strokeColor="#FF000000"
+            android:strokeWidth="2.5"
+            android:fillColor="#00000000"
+            android:pathData="M38,40 V36 a3,3 0 0 1 3,-3 H59 a3,3 0 0 1 3,3 V40"/>
+
+        <path
+            android:strokeColor="#FF000000"
+            android:strokeWidth="2.5"
+            android:fillColor="#00000000"
+            android:pathData="M60,53 A10,10 0 1 0 40,53 A10,10 0 1 0 60,53 Z"/>
+
+        <path
+            android:strokeColor="#FF000000"
+            android:strokeWidth="2"
+            android:fillColor="#00000000"
+            android:pathData="M56,53 A6,6 0 1 0 44,53 A6,6 0 1 0 56,53 Z"/>
+
+        <path
+            android:strokeColor="#FF000000"
+            android:strokeWidth="2"
+            android:fillColor="#00000000"
+            android:pathData="M50,18 C45.5,18 42,21.5 42,26 C42,32 50,39 50,39 C50,39 58,32 58,26 C58,21.5 54.5,18 50,18 Z"/>
 
         <path
             android:fillColor="#FF000000"
-            android:pathData="M25,30 H75 a5,5 0 0 1 5,5 V65 a5,5 0 0 1 -5,5 H25 a5,5 0 0 1 -5,-5 V35 a5,5 0 0 1 5,-5 Z"/>
+            android:pathData="M52,26 A2,2 0 1 0 48,26 A2,2 0 1 0 52,26 Z"/>
 
         <path
-            android:fillColor="#FF000000"
-            android:fillType="evenOdd"
-            android:pathData="
-                M65,50 A15,15 0 1 0 35,50 A15,15 0 1 0 65,50 Z
-                M60,50 A10,10 0 1 1 40,50 A10,10 0 1 1 60,50 Z"/>
-
-<!--        <path-->
-<!--            android:fillColor="#FF000000"-->
-<!--            android:pathData="M50,10 C42.928932,10 35.546001,17.317177 35,25 34.453999,32.682823 50,45 50,45 50,45 65.546001,32.682823 65,25 64.453999,17.317177 57.071068,10 50,10 Z"/>-->
-
-        <path
-            android:fillColor="#FF000000"
-            android:pathData="M79,35 A4,4 0 1 0 71,35 A4,4 0 1 0 79,35 Z"/>
+            android:strokeColor="#FF000000"
+            android:strokeWidth="2"
+            android:fillColor="#00000000"
+            android:pathData="M70,45 A2,2 0 1 0 66,45 A2,2 0 1 0 70,45 Z"/>
     </group>
 </vector>
