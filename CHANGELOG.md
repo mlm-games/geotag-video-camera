@@ -1,3 +1,9 @@
+## v2.1.6
+
+- [chore] fail for wrong key
+- Bump actions/upload-artifact from 4 to 5 in /.github/workflows
+
+
 ## v2.1.5
 
 - Update android.yml
