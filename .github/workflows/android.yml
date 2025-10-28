@@ -155,7 +155,7 @@ jobs:
           track: ${{ inputs.play_track }}
           status: completed
           whatsNewDirectory: fastlane/metadata/android
-        continue-on-error: true
+        # continue-on-error: true
       
       - name: Clean before APK build
         run: ./gradlew clean
