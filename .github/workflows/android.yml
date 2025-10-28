@@ -18,7 +18,7 @@ on:
       play_track:
         description: 'Google Play track (internal, alpha, beta, production)'
         required: true
-        default: 'alpha'
+        default: 'production'
         type: choice
         options: [internal, alpha, beta, production]
 
@@ -29,7 +29,7 @@ concurrency:
 env:
   APP_NAME: 'Geotag Camera'      
   APP_SLUG: 'geotag_camera'     
-  APPLICATION_ID: 'com.app.geotagvideocamera'
+  APPLICATION_ID: 'org.app.geotagvideocamera'
 
   JAVA_VERSION: '21'
   JAVA_DISTRIBUTION: 'corretto'
