@@ -1,3 +1,12 @@
+## v2.1.11
+
+- [chore] fix minor namespace issue
+- change namespace from com.app to org.app, and fix keystore not being applied
+- [chore] Update android.yml
+- [chore] fail for wrong key
+- Bump actions/upload-artifact from 4 to 5 in /.github/workflows
+
+
 ## v2.1.10
 
 - change namespace from com.app to org.app, and fix keystore not being applied
