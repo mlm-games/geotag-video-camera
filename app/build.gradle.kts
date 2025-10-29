@@ -133,7 +133,7 @@ android {
         kotlinCompilerExtensionVersion = "2.0.0"
     }
 
-    namespace = "app.flicky"
+    namespace = "org.app.geotagvideocamera"
 
 
     dependenciesInfo {
