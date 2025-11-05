@@ -9,6 +9,9 @@ A simple CameraX + Compose app that overlays a live map and location info on top
   <a href="https://apt.izzysoft.de/fdroid/index/apk/org.app.geotagvideocamera">
     <img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroidButtonGreyBorder_nofont.png" height="54" alt="Get it at IzzyOnDroid">
   </a>
+    <a href="https://play.google.com/store/apps/details?id=org.app.geotagvideocamera">
+    <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="80" alt="Get it on Google Play">
+  </a>
 
 </p>
 
