@@ -131,6 +131,7 @@ fun SettingsScreen(
     "hideModeButton" -> s.hideModeButton
     "debugLocation" -> s.debugLocation
     "showTopBar" -> s.showTopBar
+    "showLocationTextWithoutMap" -> s.showLocationTextWithoutMap
     else -> false
 }
 
@@ -139,6 +140,7 @@ fun SettingsScreen(
     "unitsIndex" -> s.unitsIndex
     "mapProviderIndex" -> s.mapProviderIndex
     "addressPositionIndex" -> s.addressPositionIndex
+    "cameraFacing" -> s.cameraFacing
     else -> 0
 }
 

@@ -239,7 +239,7 @@ fun CameraAndOverlayScreen(
         }
 
         // Bind whenever provider/permission/mode changes
-        LaunchedEffect(camGranted, cameraProvider.value, mode) {
+        LaunchedEffect(camGranted, cameraProvider.value, mode, settings.cameraFacing) {
             if (!camGranted) return@LaunchedEffect
             val provider = cameraProvider.value ?: return@LaunchedEffect
 
@@ -247,11 +247,23 @@ fun CameraAndOverlayScreen(
                 it.surfaceProvider = previewView.surfaceProvider
             }
 
-            // Prefer back camera; fall back to front if needed (e.g., some emulators)
+            // Selects camera based on settings
+            val preferredSelector = if (settings.cameraFacing == 1) {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
+
+            val fallbackSelector = if (settings.cameraFacing == 1) {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            } else {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            }
+
             val selector = runCatching {
                 when {
-                    provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
-                    provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
+                    provider.hasCamera(preferredSelector) -> preferredSelector
+                    provider.hasCamera(fallbackSelector) -> fallbackSelector
                     else -> null
                 }
             }.getOrNull() ?: return@LaunchedEffect
@@ -279,6 +291,11 @@ fun CameraAndOverlayScreen(
 
         if (settings.showMap) {
             MapCard(
+                settings = settings,
+                loc = locationUi
+            )
+        } else if (settings.showLocationTextWithoutMap) {
+            StandaloneLocationOverlay(
                 settings = settings,
                 loc = locationUi
             )
@@ -325,7 +342,7 @@ fun CameraAndOverlayScreen(
                             }
                         }
                         CameraMode.VIDEO -> {
-                              Toast.makeText(context, "Use android's screen recording feature (from Settings or Quick Tiles", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Use android's screen recording feature (from Settings or Quick Tiles", Toast.LENGTH_SHORT).show()
 //                            val intent = projectionManager.createScreenCaptureIntent()
 //                            screenCaptureLauncher.launch(intent)
                         }
@@ -573,6 +590,55 @@ private fun BoxScope.MapCard(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.StandaloneLocationOverlay(
+    settings: SettingsState,
+    loc: LocationUi?
+) {
+    val showCoords = settings.showCoordinates
+    val showAddr = settings.showAddress
+
+    if (!showCoords && !showAddr) return
+
+    val fontSize = if (settings.compactUi) 11.sp else 13.sp
+    val cornerRadius = if (settings.compactUi) 8.dp else 10.dp
+
+    Surface(
+        color = Color.Black.copy(alpha = 0.6f),
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(cornerRadius),
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (showCoords) {
+                val coordText = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "—"
+                Text(
+                    text = coordText,
+                    color = Color.White,
+                    fontSize = fontSize,
+                    maxLines = 1
+                )
+            }
+            if (showAddr) {
+                val address = loc?.address ?: "—"
+                Text(
+                    text = address,
+                    color = Color.White,
+                    fontSize = fontSize,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

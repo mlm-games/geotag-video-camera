@@ -69,6 +69,7 @@ data class SettingsState(
     val mapZoom: Float = 15f,
     val showTopBar: Boolean = false,
     val addressPositionIndex: Int = 0,
+    val showLocationTextWithoutMap: Boolean = true,
 
     // Map
     val mapProviderIndex: Int = 0, // 0 MapLibre, 1 MapTiler, 2 Geoapify
@@ -78,10 +79,11 @@ data class SettingsState(
 
     // Camera
     val hideModeButton: Boolean = true,
+    val cameraFacing: Int = 0, // 0 = back, 1 = front
 
     // System
     val debugLocation: Boolean = false,
-    val demoNoticeShown: Boolean = false 
+    val demoNoticeShown: Boolean = false
 )
 
 val SettingsSpecs: List<SettingSpec<*>> = listOf(
@@ -98,12 +100,19 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
 
     // Overlay
     ToggleSpec("showMap", SettingCategory.OVERLAY, R.string.show_map, default = true),
+    ToggleSpec(
+        id = "showLocationTextWithoutMap",
+        category = SettingCategory.OVERLAY,
+        titleRes = R.string.show_location_text_without_map,
+        default = true,
+        enabledIf = { !it.showMap }
+    ),
     ToggleSpec("showCoordinates", SettingCategory.OVERLAY, R.string.show_coordinates, default = false),
     ToggleSpec("showAddress", SettingCategory.OVERLAY, R.string.show_address, default = true),
     ToggleSpec("showSpeed", SettingCategory.OVERLAY, R.string.show_speed, default = false),
     ToggleSpec("showGpsStatus", SettingCategory.OVERLAY, R.string.show_gps_status, default = false),
     DropdownSpec("unitsIndex", SettingCategory.OVERLAY, R.string.units, entries = listOf(R.string.units_metric, R.string.units_imperial), defaultIndex = 0),
-    SliderSpec("mapZoom", SettingCategory.OVERLAY, R.string.map_zoom, min = 4f, max = 20f, step = 1f, default = 15f),
+    SliderSpec("mapZoom", SettingCategory.OVERLAY, R.string.map_zoom, min = 4f, max = 20f, step = 1f, default = 15f, enabledIf = { it.showMap }),
     ToggleSpec("showTopBar", SettingCategory.OVERLAY, R.string.show_top_bar, default = false),
     DropdownSpec(
         id = "addressPositionIndex",
@@ -114,7 +123,8 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
             R.string.address_inside_bottom,
             R.string.address_below_map
         ),
-        defaultIndex = 0
+        defaultIndex = 0,
+        enabledIf = { it.showMap && it.showAddress }
     ),
 
     // Map (provider and keys)
@@ -130,6 +140,13 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
     TextSpec("geoapifyApiKey", SettingCategory.MAP, R.string.geoapify_api_key),
 
     // Camera
+    DropdownSpec(
+        id = "cameraFacing",
+        category = SettingCategory.CAMERA,
+        titleRes = R.string.camera_facing,
+        entries = listOf(R.string.camera_back, R.string.camera_front),
+        defaultIndex = 0
+    ),
     ToggleSpec("hideModeButton", SettingCategory.CAMERA, R.string.hide_mode_button, default = true),
 
     // System

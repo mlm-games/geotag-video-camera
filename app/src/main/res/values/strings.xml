@@ -42,4 +42,8 @@
     <string name="address_inside_top">Inside (top)</string>
     <string name="address_inside_bottom">Inside (bottom)</string>
     <string name="address_below_map">Below map</string>
+    <string name="camera_facing">Camera</string>
+    <string name="camera_back">Back camera</string>
+    <string name="camera_front">Front camera</string>
+    <string name="show_location_text_without_map">Show location text when map hidden</string>
 </resources>

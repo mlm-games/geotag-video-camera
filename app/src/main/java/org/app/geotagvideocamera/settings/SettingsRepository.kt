@@ -32,6 +32,7 @@ class SettingsRepository(private val context: Context) {
                 mapZoom = p[floatPreferencesKey("mapZoom")] ?: 15f,
                 showTopBar = p[booleanPreferencesKey("showTopBar")] ?: false,
                 addressPositionIndex = p[intPreferencesKey("addressPositionIndex")] ?: 0,
+                showLocationTextWithoutMap = p[booleanPreferencesKey("showLocationTextWithoutMap")] ?: true,
 
                 // Map
                 mapProviderIndex = p[intPreferencesKey("mapProviderIndex")] ?: 0,
@@ -41,6 +42,7 @@ class SettingsRepository(private val context: Context) {
 
                 // Camera
                 hideModeButton = p[booleanPreferencesKey("hideModeButton")] ?: true,
+                cameraFacing = p[intPreferencesKey("cameraFacing")] ?: 0,
 
                 // System
                 debugLocation = p[booleanPreferencesKey("debugLocation")] ?: false,
