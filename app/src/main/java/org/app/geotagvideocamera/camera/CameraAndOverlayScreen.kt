@@ -457,6 +457,14 @@ private fun BoxScope.MapCard(
     val cardWidth = if (settings.compactUi) 200.dp else 240.dp
     val cardHeight = if (settings.compactUi) 220.dp else 280.dp
 
+    // Inc. bottom padding for map card based on whether address is below
+    val showAddressBelow = settings.showAddress && settings.addressPositionIndex == 2
+    val mapBottomPadding = when {
+        showAddressBelow && settings.compactUi -> 140.dp
+        showAddressBelow -> 160.dp
+        else -> 100.dp
+    }
+
     val address = loc?.address ?: "—"
     val showAddress = settings.showAddress
     val addrPos = settings.addressPositionIndex
@@ -464,7 +472,7 @@ private fun BoxScope.MapCard(
     Box(
         modifier = Modifier
             .align(Alignment.BottomCenter)
-            .padding(bottom = 100.dp)
+            .padding(bottom = mapBottomPadding)
             .size(cardWidth, cardHeight)
             .clip(RoundedCornerShape(12.dp))
             .border(2.dp, Color.White, RoundedCornerShape(12.dp))
@@ -517,13 +525,14 @@ private fun BoxScope.MapCard(
     }
 
     if (showAddress && addrPos == 2) {
+        val addressBottomPadding = if (settings.compactUi) 100.dp else 110.dp
         Surface(
             color = Color.Black.copy(alpha = 0.7f),
             tonalElevation = 0.dp,
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (settings.compactUi) 44.dp else 50.dp)
+                .padding(bottom = addressBottomPadding, start = 16.dp, end = 16.dp)
         ) {
             Text(
                 text = address,

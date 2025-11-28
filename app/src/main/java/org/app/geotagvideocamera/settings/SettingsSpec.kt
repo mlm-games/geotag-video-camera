@@ -68,7 +68,7 @@ data class SettingsState(
     val unitsIndex: Int = 0, // 0 metric, 1 imperial
     val mapZoom: Float = 15f,
     val showTopBar: Boolean = false,
-    val addressPositionIndex: Int = 0,
+    val addressPositionIndex: Int = 2,
     val showLocationTextWithoutMap: Boolean = true,
 
     // Map
