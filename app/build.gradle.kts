@@ -158,7 +158,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
 
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
@@ -171,8 +170,12 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.extensions)
 
+    implementation(libs.androidx.viewfinder.compose)
+    implementation(libs.androidx.camera.compose)
+
     // Location (MicroG coz FDroid)
     implementation(libs.microg.location)
+    implementation(libs.maplibre.compose.android)
 
     // UI components
     implementation(libs.androidx.appcompat)
@@ -182,10 +185,23 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.maplibre.android)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+    // Screen recording/export
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
+    implementation(libs.androidx.media3.common)
+
+    // Photo Picker (Compose) (needs API 34)
+//    implementation("androidx.photopicker:photopicker-compose:1.0.0-alpha01")
+
+    // Altitude conversion to Mean Sea Level
+    implementation(libs.androidx.core.location.altitude)
+
+    // Performance
+    implementation(libs.androidx.profileinstaller)
 
     // Testing
     testImplementation(libs.junit)

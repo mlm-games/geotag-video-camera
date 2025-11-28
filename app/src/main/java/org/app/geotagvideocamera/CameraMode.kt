@@ -1,12 +1,11 @@
 package org.app.geotagvideocamera
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 
 enum class CameraMode {
     PHOTO, VIDEO
@@ -26,7 +25,11 @@ fun CameraModeToggle(
         modifier = modifier
     ) {
         Icon(
-            imageVector = if (currentMode == CameraMode.PHOTO) Icons.Filled.Videocam else Icons.Filled.PhotoCamera,
+            imageVector = if (currentMode == CameraMode.PHOTO) {
+                ImageVector.vectorResource(R.drawable.ic_videocam)
+            } else {
+                ImageVector.vectorResource(R.drawable.ic_camera)
+            },
             contentDescription = "Toggle camera mode"
         )
     }

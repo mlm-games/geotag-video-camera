@@ -1,4 +1,5 @@
 [versions]
+coreLocationAltitude = "1.0.0-beta01"
 kotlin = "2.2.21"
 agp = "8.13.1"
 appcompat = "1.7.1"
@@ -13,27 +14,39 @@ lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.12.0"
 composeBom = "2025.11.01"
 lifecycleViewmodelNavigation3 = "2.10.0"
+maplibreComposeAndroid = "0.12.1"
 material = "1.13.0"
 exifinterface = "1.4.1"
 datastorePreferences = "1.2.0"
 maplibre = "12.2.0"
+media3Common = "1.8.0"
+media3Effect = "1.8.0"
+media3Transformer = "1.8.0"
 navigation3Ui = "1.0.0"
 navigationCompose = "2.9.6"
 kotlinxSerializationJson = "1.9.0"
 navigation3Runtime = "1.0.0"
+profileinstaller = "1.4.1"
 
 
 [libraries]
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera" }
+androidx-camera-compose = { module = "androidx.camera:camera-compose", version.ref = "camera" }
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camera" }
 androidx-camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "camera" }
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "constraintlayout" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-core-location-altitude = { module = "androidx.core:core-location-altitude", version.ref = "coreLocationAltitude" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose" }
 androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "lifecycleViewmodelNavigation3" }
 androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3Common" }
+androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "media3Effect" }
+androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "media3Transformer" }
 androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3Ui" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
+androidx-viewfinder-compose = { module = "androidx.camera.viewfinder:viewfinder-compose", version.ref = "camera" }
 desugar_jdk_libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -51,6 +64,7 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camera" }
 androidx-camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "camera" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
+maplibre-compose-android = { module = "org.maplibre.compose:maplibre-compose-android", version.ref = "maplibreComposeAndroid" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
 microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.6.244735" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }

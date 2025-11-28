@@ -4,18 +4,16 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.location.Location
-import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.core.content.ContextCompat
+import androidx.core.location.altitude.AltitudeConverterCompat
 import androidx.exifinterface.media.ExifInterface
-import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.text.SimpleDateFormat
@@ -36,7 +34,6 @@ object MediaUtils {
         onPhotoSaved: (Uri) -> Unit,
         onError: (String) -> Unit
     ) {
-        // Create output file options
         val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
             .format(System.currentTimeMillis())
 
@@ -54,14 +51,12 @@ object MediaUtils {
             contentValues
         ).build()
 
-        // Take the photo
         imageCapture.takePicture(
             outputOptions,
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     output.savedUri?.let { uri ->
-                        // Embed location metadata
                         location?.let { loc ->
                             embedLocationMetadata(context, uri, loc)
                         }
@@ -77,19 +72,35 @@ object MediaUtils {
     }
 
     /**
-     * Embeds location metadata into a captured photo
-     * Use a seekable FileDescriptor; ExifInterface does not persist changes with plain InputStreams.
+     * Embeds location metadata into a captured photo.
+     * Converts GPS ellipsoid altitude to MSL (Mean Sea Level) before writing EXIF.
      */
     private fun embedLocationMetadata(context: Context, uri: Uri, location: Location) {
         try {
             context.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
                 val exif = ExifInterface(pfd.fileDescriptor)
-                exif.setLatLong(location.latitude, location.longitude)
-                if (location.hasAltitude()) {
-                    exif.setAltitude(location.altitude)
+
+                // Clone location to avoid mutating the original
+                val loc = Location(location)
+
+                // Convert ellipsoid altitude to MSL (Mean Sea Level)
+                runCatching {
+                    AltitudeConverterCompat.addMslAltitudeToLocation(context, loc)
+                }.onFailure { e ->
+                    Log.w("MediaUtils", "MSL altitude conversion failed", e)
                 }
+
+                val altitude = when {
+                    loc.hasMslAltitudeD() -> loc.mslAltitudeMetersD
+                    loc.hasAltitude() -> loc.altitude
+                    else -> null
+                }
+                altitude?.let { exif.setAltitude(it) }
+
+                exif.setLatLong(loc.latitude, loc.longitude)
                 exif.saveAttributes()
-                Log.d("MediaUtils", "Location metadata embedded successfully")
+
+                Log.d("MediaUtils", "Location metadata embedded successfully (MSL: ${loc.hasMslAltitudeD()})")
             }
         } catch (e: IOException) {
             Log.e("MediaUtils", "Error embedding location metadata", e)
@@ -133,50 +144,28 @@ object MediaUtils {
             return uri
         } catch (e: Exception) {
             Log.e("MediaUtils", "Failed to save bitmap", e)
-            // Cleanup the row if something failed
             runCatching { resolver.delete(uri, null, null) }
             Toast.makeText(context, "Failed to save screenshot: ${e.message}", Toast.LENGTH_SHORT).show()
         }
         return null
     }
+}
 
-    /**
-     * Creates a MediaRecorder instance for screen recording
-     */
-    fun createMediaRecorder(context: Context, width: Int, height: Int): MediaRecorder {
-        val videoPath = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)}/GeotagCamera"
-        val dir = File(videoPath)
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
+// Extensions
 
-        val fileName = "geotag_${System.currentTimeMillis()}.mp4"
-        val filePath = "$videoPath/$fileName"
-
-        val mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MediaRecorder(context)
-        } else {
-            @Suppress("DEPRECATION")
-            MediaRecorder()
-        }
-
-        mediaRecorder.apply {
-            setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            setVideoEncodingBitRate(8 * 1024 * 1024) // 8Mbps
-            setVideoFrameRate(30)
-            setVideoSize(width, height)
-            setOutputFile(filePath)
-
-            try {
-                prepare()
-            } catch (e: IOException) {
-                Log.e("MediaUtils", "Error preparing MediaRecorder", e)
-                Toast.makeText(context, "Failed to prepare recording", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        return mediaRecorder
+// check if Location has MSL altitude
+private fun Location.hasMslAltitudeD(): Boolean {
+    return if (Build.VERSION.SDK_INT >= 34) {
+        hasMslAltitude()
+    } else {
+        extras?.containsKey("mslAltitude") == true
     }
 }
+
+// get MSL altitude
+private val Location.mslAltitudeMetersD: Double
+    get() = if (Build.VERSION.SDK_INT >= 34) {
+        mslAltitudeMeters
+    } else {
+        extras?.getDouble("mslAltitude", altitude) ?: altitude
+    }

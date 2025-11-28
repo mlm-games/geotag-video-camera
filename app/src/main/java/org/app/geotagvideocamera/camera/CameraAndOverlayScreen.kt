@@ -1,23 +1,18 @@
 package org.app.geotagvideocamera.camera
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.MediaRecorder
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.camera.viewfinder.core.ImplementationMode
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -28,16 +23,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -57,21 +45,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.view.drawToBitmap
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.app.geotagvideocamera.CameraMode
 import org.app.geotagvideocamera.CameraModeToggle
 import org.app.geotagvideocamera.MediaUtils
+import org.app.geotagvideocamera.R
 import org.app.geotagvideocamera.location.LocationTracker
 import org.app.geotagvideocamera.location.LocationUi
 import org.app.geotagvideocamera.location.formatLatLon
@@ -79,8 +71,6 @@ import org.app.geotagvideocamera.location.formatSpeed
 import org.app.geotagvideocamera.map.MapOverlay
 import org.app.geotagvideocamera.settings.SettingsState
 import org.app.geotagvideocamera.settings.SettingsViewModel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 @Composable
@@ -92,10 +82,9 @@ fun CameraAndOverlayScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val rootView = LocalView.current
 
-    // Observe settings
     val settings by settingsVm.state.collectAsStateWithLifecycle()
 
-    // Request permissions (CAMERA + FINE LOCATION)
+    // Permission handling
     val hasCamera = remember {
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
@@ -111,6 +100,7 @@ fun CameraAndOverlayScreen(
         camGranted = result[Manifest.permission.CAMERA] == true || camGranted
         locGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true || locGranted
     }
+
     var timeText by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         while (true) {
@@ -128,7 +118,7 @@ fun CameraAndOverlayScreen(
         if (req.isNotEmpty()) permLauncher.launch(req.toTypedArray())
     }
 
-    // CameraX preview setup
+    // CameraX provider
     val cameraProvider = remember { mutableStateOf<ProcessCameraProvider?>(null) }
     LaunchedEffect(Unit) {
         cameraProvider.value = context.getCameraProvider()
@@ -140,7 +130,6 @@ fun CameraAndOverlayScreen(
     LaunchedEffect(locGranted, settings.debugLocation) {
         if (settings.debugLocation) {
             tracker.stop()
-            // Golden Gate Bridge
             tracker.pushDebugLocation(lat = 37.8199, lon = -122.4783)
         } else {
             if (locGranted) tracker.start() else tracker.stop()
@@ -156,67 +145,51 @@ fun CameraAndOverlayScreen(
     var recordingStartNanos by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
 
-    // MediaProjection / Recording plumbing
-    val projectionManager = remember {
-        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-    }
-    var mediaProjection by remember { mutableStateOf<MediaProjection?>(null) }
-    var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var virtualDisplay by remember { mutableStateOf<VirtualDisplay?>(null) }
+    // CameraX Viewfinder state
+    val surfaceRequestState = remember { mutableStateOf<SurfaceRequest?>(null) }
 
-    fun stopRecording() {
-        runCatching { virtualDisplay?.release() }.onFailure { /* ignore */ }
-        virtualDisplay = null
-        runCatching { mediaProjection?.stop() }.onFailure { /* ignore */ }
-        mediaProjection = null
-        runCatching {
-            mediaRecorder?.apply {
-                try { stop() } catch (_: Throwable) { /* ignore */ }
-                reset()
-                release()
+    // Build Preview use case
+    val preview = remember {
+        Preview.Builder().build().also { p ->
+            p.setSurfaceProvider { request ->
+                surfaceRequestState.value = request
             }
-        }.onFailure { /* ignore */ }
-        mediaRecorder = null
-        isRecording = false
-    }
-
-    val screenCaptureLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { res ->
-        if (res.resultCode == Activity.RESULT_OK && res.data != null) {
-            val mp = projectionManager.getMediaProjection(res.resultCode, res.data!!)
-            mediaProjection = mp
-
-            val metrics = context.resources.displayMetrics
-            val width = metrics.widthPixels
-            val height = metrics.heightPixels
-            val density = metrics.densityDpi
-
-            val recorder = MediaUtils.createMediaRecorder(context, width, height)
-            mediaRecorder = recorder
-
-            val surface = recorder.surface
-            virtualDisplay = mp?.createVirtualDisplay(
-                "GeotagScreenRecord",
-                width, height, density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                surface, null, null
-            )
-
-            try {
-                recorder.start()
-                recordingStartNanos = System.nanoTime()
-                isRecording = true
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to start recording: ${e.message}", Toast.LENGTH_SHORT).show()
-                stopRecording()
-            }
-        } else {
-            Toast.makeText(context, "Screen recording permission denied", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // UI
+    // Bind camera when provider/permission/settings change
+    LaunchedEffect(camGranted, cameraProvider.value, mode, settings.cameraFacing) {
+        if (!camGranted) return@LaunchedEffect
+        val provider = cameraProvider.value ?: return@LaunchedEffect
+
+        val preferredSelector = if (settings.cameraFacing == 1) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+
+        val fallbackSelector = if (settings.cameraFacing == 1) {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        } else {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        }
+
+        val selector = runCatching {
+            when {
+                provider.hasCamera(preferredSelector) -> preferredSelector
+                provider.hasCamera(fallbackSelector) -> fallbackSelector
+                else -> null
+            }
+        }.getOrNull() ?: return@LaunchedEffect
+
+        runCatching {
+            provider.unbindAll()
+            provider.bindToLifecycle(lifecycleOwner, selector, preview)
+        }.onFailure { e ->
+            android.util.Log.e("CameraPreview", "Failed to bind camera", e)
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -226,60 +199,16 @@ fun CameraAndOverlayScreen(
                 )
             }
     ) {
-        val previewView = remember {
-            PreviewView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                // TextureView-based implementation → lets us include it in screenshots.
-                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }
+        // CameraX Viewfinder (EMBEDDED mode for screenshot capture, yet has a problem with the capture button)
+        surfaceRequestState.value?.let { sr ->
+            CameraXViewfinder(
+                surfaceRequest = sr,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(0f),
+                implementationMode = ImplementationMode.EMBEDDED
+            )
         }
-
-        // Bind whenever provider/permission/mode changes
-        LaunchedEffect(camGranted, cameraProvider.value, mode, settings.cameraFacing) {
-            if (!camGranted) return@LaunchedEffect
-            val provider = cameraProvider.value ?: return@LaunchedEffect
-
-            val preview = Preview.Builder().build().also {
-                it.surfaceProvider = previewView.surfaceProvider
-            }
-
-            // Selects camera based on settings
-            val preferredSelector = if (settings.cameraFacing == 1) {
-                CameraSelector.DEFAULT_FRONT_CAMERA
-            } else {
-                CameraSelector.DEFAULT_BACK_CAMERA
-            }
-
-            val fallbackSelector = if (settings.cameraFacing == 1) {
-                CameraSelector.DEFAULT_BACK_CAMERA
-            } else {
-                CameraSelector.DEFAULT_FRONT_CAMERA
-            }
-
-            val selector = runCatching {
-                when {
-                    provider.hasCamera(preferredSelector) -> preferredSelector
-                    provider.hasCamera(fallbackSelector) -> fallbackSelector
-                    else -> null
-                }
-            }.getOrNull() ?: return@LaunchedEffect
-
-            runCatching {
-                provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, selector, preview)
-            }.onFailure { e ->
-                android.util.Log.e("CameraPreview", "Failed to bind camera", e)
-            }
-        }
-
-        AndroidView(
-            factory = { previewView },
-            modifier = Modifier.fillMaxSize().zIndex(0f),
-        )
 
         if (settings.showTopBar) {
             TopStatusBar(
@@ -306,7 +235,6 @@ fun CameraAndOverlayScreen(
             loc = locationUi
         )
 
-        //cam button hidden during screenshot/recording
         val controlsHidden = isCapturing || isRecording
         if (!settings.hideModeButton && !controlsHidden) {
             CameraModeToggle(
@@ -318,17 +246,14 @@ fun CameraAndOverlayScreen(
             )
         }
 
-        // Action button:
-        // - PHOTO mode → Screenshot
         if (!settings.hideModeButton && !controlsHidden) {
             FloatingActionButton(
                 onClick = {
                     when (mode) {
                         CameraMode.PHOTO -> {
                             isCapturing = true
-                            // Hide the buttons before capture
                             scope.launch {
-                                withFrameNanos { /* wait one frame so controls are hidden */ }
+                                withFrameNanos { }
                                 val bmp = safeDrawToBitmap(rootView)
                                 if (bmp != null) {
                                     val uri = MediaUtils.saveBitmapToPictures(context, bmp)
@@ -342,9 +267,11 @@ fun CameraAndOverlayScreen(
                             }
                         }
                         CameraMode.VIDEO -> {
-                            Toast.makeText(context, "Use android's screen recording feature (from Settings or Quick Tiles", Toast.LENGTH_SHORT).show()
-//                            val intent = projectionManager.createScreenCaptureIntent()
-//                            screenCaptureLauncher.launch(intent)
+                            Toast.makeText(
+                                context,
+                                "Use Android's screen recording feature (from Settings or Quick Tiles)",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 },
@@ -355,18 +282,23 @@ fun CameraAndOverlayScreen(
                 contentColor = Color.White
             ) {
                 when (mode) {
-                    CameraMode.PHOTO -> Icon(Icons.Outlined.CameraAlt, contentDescription = "Screenshot")
-                    CameraMode.VIDEO -> Icon(Icons.Filled.RadioButtonChecked, contentDescription = "Start recording")
+                    CameraMode.PHOTO -> Icon(
+                        imageVector = ImageVector.vectorResource(R.drawable.ic_camera),
+                        contentDescription = "Screenshot"
+                    )
+                    CameraMode.VIDEO -> Icon(
+                        imageVector = ImageVector.vectorResource(R.drawable.ic_videocam),
+                        contentDescription = "Start recording"
+                    )
                 }
             }
         }
 
-        // Recording bar (shown only while recording)
         if (isRecording) {
             RecordingBar(
                 startNanos = recordingStartNanos,
                 onStop = {
-                    stopRecording()
+                    isRecording = false
                     Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier
@@ -375,7 +307,6 @@ fun CameraAndOverlayScreen(
             )
         }
 
-        // One-time notice: using demo tiles (MapLibre demo) → suggest MapTiler/Geoapify
         val usingDemoTiles = remember(settings) { usesDemoTiles(settings) }
         if (usingDemoTiles && !settings.demoNoticeShown) {
             AlertDialog(
@@ -383,7 +314,7 @@ fun CameraAndOverlayScreen(
                 title = { Text("Map tiles notice") },
                 text = {
                     Text(
-                        "The app initially starts with MapLibre demo tiles. They are minimal maps that do not show terrain ( only for demonstration purposes) " +
+                        "The app initially starts with MapLibre demo tiles. They are minimal maps that do not show terrain (only for demonstration purposes). " +
                                 "For better maps, switch to MapTiler or Geoapify in Settings → Map and enter your API key. " +
                                 "Double‑tap anywhere to open Settings."
                     )
@@ -424,7 +355,7 @@ private fun RecordingBar(
     val ss = (elapsedSec % 60).toString().padStart(2, '0')
 
     Surface(
-        color = Color(0xB3B00020), // semi-transparent red
+        color = Color(0xB3B00020),
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(12.dp),
         modifier = modifier
@@ -434,10 +365,18 @@ private fun RecordingBar(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Videocam, contentDescription = null, tint = Color.White)
+            Icon(
+                imageVector = ImageVector.vectorResource(R.drawable.ic_videocam),
+                contentDescription = null,
+                tint = Color.White
+            )
             Text(text = "$mm:$ss REC", color = Color.White)
             TextButton(onClick = onStop) {
-                Icon(Icons.Filled.Stop, contentDescription = "Stop", tint = Color.White)
+                Icon(
+                    imageVector = ImageVector.vectorResource(R.drawable.ic_stop),
+                    contentDescription = "Stop",
+                    tint = Color.White
+                )
                 Spacer(Modifier.size(6.dp))
                 Text("Stop", color = Color.White)
             }
@@ -447,9 +386,9 @@ private fun RecordingBar(
 
 private fun usesDemoTiles(s: SettingsState): Boolean {
     return when (s.mapProviderIndex) {
-        0 -> s.styleUrl.isBlank() // MapLibre provider with no custom style → demo tiles
-        1 -> s.maptilerApiKey.isBlank() // MapTiler with no key → fallback demo
-        else -> s.geoapifyApiKey.isBlank() // Geoapify no key → fallback demo
+        0 -> s.styleUrl.isBlank()
+        1 -> s.maptilerApiKey.isBlank()
+        else -> s.geoapifyApiKey.isBlank()
     }
 }
 
@@ -488,9 +427,9 @@ private fun TopStatusBar(timeText: String, accuracy: Float?, dense: Boolean) {
             Text(timeText, color = Color.White, fontSize = timeSize)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val col = when {
-                    (accuracy ?: Float.MAX_VALUE) <= 10f -> Color(0xFF00C853) // green
-                    (accuracy ?: Float.MAX_VALUE) <= 30f -> Color(0xFFFFAB00) // amber
-                    else -> Color(0xFFD50000) // red
+                    (accuracy ?: Float.MAX_VALUE) <= 10f -> Color(0xFF00C853)
+                    (accuracy ?: Float.MAX_VALUE) <= 30f -> Color(0xFFFFAB00)
+                    else -> Color(0xFFD50000)
                 }
                 androidx.compose.foundation.Canvas(Modifier.size(10.dp)) {
                     drawCircle(color = col)
@@ -516,7 +455,7 @@ private fun BoxScope.MapCard(
 
     val address = loc?.address ?: "—"
     val showAddress = settings.showAddress
-    val addrPos = settings.addressPositionIndex // 0 = inside top, 1 = inside bottom, 2 = above map
+    val addrPos = settings.addressPositionIndex
 
     Box(
         modifier = Modifier
