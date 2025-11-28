@@ -12,12 +12,15 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.12.0"
 composeBom = "2025.11.01"
+lifecycleViewmodelNavigation3 = "2.10.0"
 material = "1.13.0"
 exifinterface = "1.4.1"
 datastorePreferences = "1.2.0"
 maplibre = "12.2.0"
+navigation3Ui = "1.0.0"
 navigationCompose = "2.9.6"
 kotlinxSerializationJson = "1.9.0"
+navigation3Runtime = "1.0.0"
 
 
 [libraries]
@@ -28,7 +31,9 @@ androidx-camera-extensions = { module = "androidx.camera:camera-extensions", ver
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "constraintlayout" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose" }
+androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "lifecycleViewmodelNavigation3" }
 androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3Ui" }
 desugar_jdk_libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -53,6 +58,7 @@ androidx-datastore-preferences = { group = "androidx.datastore", name = "datasto
 maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3Runtime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

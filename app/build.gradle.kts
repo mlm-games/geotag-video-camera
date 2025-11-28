@@ -183,6 +183,9 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.maplibre.android)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
     // Testing
     testImplementation(libs.junit)
