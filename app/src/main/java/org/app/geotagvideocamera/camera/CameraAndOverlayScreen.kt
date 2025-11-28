@@ -55,6 +55,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -568,7 +569,8 @@ private fun BoxScope.StandaloneLocationOverlay(
                     text = coordText,
                     color = Color.White,
                     fontSize = fontSize,
-                    maxLines = 1
+                    maxLines = 1,
+                    textAlign = TextAlign.Right
                 )
             }
             if (showAddr) {
