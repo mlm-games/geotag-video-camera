@@ -7,7 +7,9 @@ import androidx.compose.ui.Modifier
 import org.app.geotagvideocamera.settings.SettingsState
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.rememberCameraState
+import org.maplibre.compose.map.MapOptions
 import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.map.RenderOptions
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Position
 
@@ -52,6 +54,11 @@ fun MapOverlay(
     MaplibreMap(
         baseStyle = BaseStyle.Uri(styleUrl),
         cameraState = cameraState,
+        options = MapOptions(
+            renderOptions = RenderOptions(
+                renderMode = RenderOptions.RenderMode.TextureView
+            )
+        ),
         modifier = modifier
     )
 }
