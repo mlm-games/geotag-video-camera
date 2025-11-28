@@ -1,9 +1,14 @@
 package org.app.geotagvideocamera.camera
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
-import android.view.View
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,17 +52,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
-import androidx.core.view.drawToBitmap
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.app.geotagvideocamera.CameraMode
@@ -80,7 +85,6 @@ fun CameraAndOverlayScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val rootView = LocalView.current
 
     val settings by settingsVm.state.collectAsStateWithLifecycle()
 
@@ -102,11 +106,12 @@ fun CameraAndOverlayScreen(
     }
 
     var timeText by remember { mutableStateOf("") }
+    var implMode by remember { mutableStateOf(ImplementationMode.EMBEDDED) }
     LaunchedEffect(Unit) {
         while (true) {
             timeText = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
                 .format(System.currentTimeMillis())
-            kotlinx.coroutines.delay(1000)
+            delay(1000)
         }
     }
 
@@ -203,10 +208,9 @@ fun CameraAndOverlayScreen(
         surfaceRequestState.value?.let { sr ->
             CameraXViewfinder(
                 surfaceRequest = sr,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(0f),
-                implementationMode = ImplementationMode.EMBEDDED
+                implementationMode = implMode,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().zIndex(0f)
             )
         }
 
@@ -254,7 +258,9 @@ fun CameraAndOverlayScreen(
                             isCapturing = true
                             scope.launch {
                                 withFrameNanos { }
-                                val bmp = safeDrawToBitmap(rootView)
+                                delay(16)
+                                val activity = context.findActivity()!!
+                                val bmp = copyWindowBitmap(activity)
                                 if (bmp != null) {
                                     val uri = MediaUtils.saveBitmapToPictures(context, bmp)
                                     if (uri != null) {
@@ -346,7 +352,7 @@ private fun RecordingBar(
     var now by remember { mutableLongStateOf(System.nanoTime()) }
     LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(250)
+            delay(250)
             now = System.nanoTime()
         }
     }
@@ -400,9 +406,6 @@ private suspend fun Context.getCameraProvider(): ProcessCameraProvider =
             ContextCompat.getMainExecutor(this)
         )
     }
-
-private fun safeDrawToBitmap(view: View): android.graphics.Bitmap? =
-    runCatching { view.rootView.drawToBitmap() }.getOrNull()
 
 @Composable
 private fun TopStatusBar(timeText: String, accuracy: Float?, dense: Boolean) {
@@ -630,6 +633,36 @@ private fun OverlayHud(
                     )
                 }
             }
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+
+private suspend fun copyWindowBitmap(activity: Activity): Bitmap? {
+    val decor = activity.window?.decorView ?: return null
+    if (decor.width <= 0 || decor.height <= 0) return null
+
+    val bmp = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
+
+    return suspendCancellableCoroutine { cont ->
+        try {
+            PixelCopy.request(
+                activity.window,
+                bmp,
+                { result ->
+                    if (result == PixelCopy.SUCCESS) cont.resume(bmp)
+                    else cont.resume(null)
+                },
+                Handler(Looper.getMainLooper())
+            )
+        } catch (_: Throwable) {
+            cont.resume(null)
         }
     }
 }
