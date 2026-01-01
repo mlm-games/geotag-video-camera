@@ -1,3 +1,29 @@
+## v2.3.1
+
+- Bump androidx.media3:media3-transformer from 1.8.0 to 1.9.0
+- Bump androidx.media3:media3-effect from 1.8.0 to 1.9.0
+- Bump androidx.media3:media3-common from 1.8.0 to 1.9.0
+- Bump org.maplibre.gl:android-sdk from 12.3.0 to 12.3.1
+- Bump androidx.compose:compose-bom from 2025.12.00 to 2025.12.01
+- Bump androidx.activity:activity-compose from 1.12.1 to 1.12.2
+- Bump kotlin from 2.2.21 to 2.3.0
+- Bump actions/upload-artifact from 5 to 6 in /.github/workflows
+- Bump org.maplibre.gl:android-sdk from 12.2.1 to 12.3.0
+- Bump camera from 1.5.1 to 1.5.2
+- Bump androidx.compose:compose-bom from 2025.11.01 to 2025.12.00
+- Bump androidx.activity:activity-compose from 1.12.0 to 1.12.1
+- Bump androidx.exifinterface:exifinterface from 1.4.1 to 1.4.2
+- Bump org.maplibre.gl:android-sdk from 12.2.0 to 12.2.1
+- add map bottom padding, and set addr. position below map as default
+- move coords to the right (to make maplibre visible)
+- maplibre has textureview for similar purpose
+- now cam part shows in bg
+- Use latest alpha/beta compose deps, and use material symbols for size
+- Actually use nav 3
+- Use nav 3 and add slight anim
+- Bump org.maplibre.gl:android-sdk from 12.1.3 to 12.2.0
+
+
 ## v2.2.1
 
 - Add options to show location text without map, and for front camera usage (fix #75, #84)
