@@ -24,7 +24,7 @@ media3Effect = "1.9.0"
 media3Transformer = "1.9.0"
 navigation3Ui = "1.0.0"
 navigationCompose = "2.9.6"
-kotlinxSerializationJson = "1.9.0"
+kotlinxSerializationJson = "1.10.0"
 navigation3Runtime = "1.0.0"
 profileinstaller = "1.4.1"
 
