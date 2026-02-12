@@ -1,34 +1,28 @@
 @file:Suppress("UnstableApiUsage")
 
-import com.android.build.gradle.internal.api.ApkVariantOutputImpl
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
-
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.apk.dist)
 }
 
 kotlin {
+    jvmToolchain(21)
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-        optIn.set(listOf(
-            "androidx.compose.material3.ExperimentalMaterial3Api",
-            "androidx.compose.foundation.ExperimentalFoundationApi",
-            "androidx.compose.foundation.layout.ExperimentalLayoutApi"
-        ))
+        optIn.set(
+            listOf(
+                "androidx.compose.material3.ExperimentalMaterial3Api",
+                "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+                "androidx.compose.foundation.ExperimentalFoundationApi",
+                "androidx.compose.foundation.layout.ExperimentalLayoutApi"
+            )
+        )
     }
 }
 
 android {
     compileSdk = 36
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
 
     defaultConfig {
         applicationId = "org.app.geotagvideocamera"
@@ -60,35 +54,6 @@ android {
                 }
             }
             isUniversalApk = includeUniversalApk && enableApkSplits
-        }
-    }
-
-    applicationVariants.all {
-        val buildingApk = gradle.startParameter.taskNames.any { it.contains("assemble", ignoreCase = true) }
-        if (!buildingApk) return@all
-
-        val variant = this
-        outputs.all {
-            if (this is ApkVariantOutputImpl) {
-                val abiName = filters.find { it.filterType == "ABI" }?.identifier
-                val base = variant.versionCode
-
-                if (abiName != null) {
-                    // Split APKs get stable per-ABI version codes and names
-                    val abiVersionCode = when (abiName) {
-                        "x86" -> base - 3
-                        "x86_64" -> base - 2
-                        "armeabi-v7a" -> base - 1
-                        "arm64-v8a" -> base
-                        else -> base
-                    }
-                    versionCodeOverride = abiVersionCode
-                    outputFileName = "geotag_camera-${variant.versionName}-${abiName}.apk"
-                } else {
-                    versionCodeOverride = base + 1
-                    outputFileName = "geotag_camera-${variant.versionName}-universal.apk"
-                }
-            }
         }
     }
 
@@ -124,13 +89,8 @@ android {
     }
 
     buildFeatures {
-        viewBinding = true
         buildConfig = true
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "2.0.0"
     }
 
     namespace = "org.app.geotagvideocamera"
@@ -138,6 +98,10 @@ android {
     dependenciesInfo {
         includeInApk = false
     }
+}
+
+apkDist {
+    artifactNamePrefix = "geotag_camera"
 }
 
 // Configure all tasks that are instances of AbstractArchiveTask

@@ -3,7 +3,9 @@ package org.app.geotagvideocamera.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -51,7 +53,7 @@ fun GeotagVideoCameraTheme(
         else -> LightColorScheme
     }
 
-    val shapes = androidx.compose.material3.Shapes(
+    val shapes = Shapes(
         extraSmall = RoundedCornerShape(6.dp),
         small = RoundedCornerShape(8.dp),
         medium = RoundedCornerShape(12.dp),
@@ -59,7 +61,7 @@ fun GeotagVideoCameraTheme(
         extraLarge = RoundedCornerShape(28.dp)
     )
 
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = colorScheme,
         typography = Typography,
         shapes = shapes,

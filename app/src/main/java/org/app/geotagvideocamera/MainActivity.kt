@@ -2,6 +2,7 @@ package org.app.geotagvideocamera
 
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -44,7 +45,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hideSystemBars() {
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
@@ -56,7 +57,7 @@ class MainActivity : ComponentActivity() {
         // Use the cutout area on devices with a notch
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
-                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
     }
 

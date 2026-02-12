@@ -1,7 +1,7 @@
 [versions]
 coreLocationAltitude = "1.0.0-beta01"
 kotlin = "2.3.10"
-agp = "8.13.1"
+agp = "9.0.0"
 appcompat = "1.7.1"
 camera = "1.5.3"
 constraintlayout = "2.2.1"
@@ -27,9 +27,11 @@ navigationCompose = "2.9.7"
 kotlinxSerializationJson = "1.10.0"
 navigation3Runtime = "1.0.1"
 profileinstaller = "1.4.1"
+apkDist = "0.5.2"
 
 
 [libraries]
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom-alpha", version.ref = "composeBom" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera" }
 androidx-camera-compose = { module = "androidx.camera:camera-compose", version.ref = "camera" }
@@ -53,7 +55,6 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "j
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
@@ -79,3 +80,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+apk-dist = { id = "io.github.mlm-games.apk-dist", version.ref = "apkDist" }
