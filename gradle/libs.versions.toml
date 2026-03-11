@@ -1,5 +1,5 @@
 [versions]
-coreLocationAltitude = "1.0.0-beta01"
+coreLocationAltitude = "1.0.0-rc01"
 kotlin = "2.3.10"
 agp = "9.0.0"
 appcompat = "1.7.1"
