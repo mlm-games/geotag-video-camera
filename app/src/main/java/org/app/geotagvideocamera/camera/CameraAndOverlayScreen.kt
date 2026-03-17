@@ -107,11 +107,17 @@ fun CameraAndOverlayScreen(
     }
 
     var timeText by remember { mutableStateOf("") }
+    var dateText by remember { mutableStateOf("") }
     var implMode by remember { mutableStateOf(ImplementationMode.EMBEDDED) }
+
     LaunchedEffect(Unit) {
+        val locale = java.util.Locale.getDefault()
+        val timeFormatter = java.text.SimpleDateFormat("HH:mm:ss", locale)
+        val dateFormatter = java.text.SimpleDateFormat("MM/dd/yyyy", locale)
         while (true) {
-            timeText = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                .format(System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            timeText = timeFormatter.format(now)
+            dateText = dateFormatter.format(now)
             delay(1000)
         }
     }
@@ -217,6 +223,7 @@ fun CameraAndOverlayScreen(
 
         if (settings.showTopBar) {
             TopStatusBar(
+                dateText = dateText,
                 timeText = timeText,
                 accuracy = locationUi?.accuracyMeters,
                 dense = settings.compactUi
@@ -409,9 +416,15 @@ private suspend fun Context.getCameraProvider(): ProcessCameraProvider =
     }
 
 @Composable
-private fun TopStatusBar(timeText: String, accuracy: Float?, dense: Boolean) {
+private fun TopStatusBar(
+    dateText: String,
+    timeText: String,
+    accuracy: Float?,
+    dense: Boolean
+) {
     val padV = if (dense) 4.dp else 6.dp
     val corner = if (dense) 6.dp else 8.dp
+    val dateSize = if (dense) 10.sp else 12.sp
     val timeSize = if (dense) 12.sp else 14.sp
     val accSize = if (dense) 10.sp else 12.sp
 
@@ -428,7 +441,19 @@ private fun TopStatusBar(timeText: String, accuracy: Float?, dense: Boolean) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(timeText, color = Color.White, fontSize = timeSize)
+            Column {
+                Text(
+                    text = dateText,
+                    color = Color.White,
+                    fontSize = dateSize
+                )
+                Text(
+                    text = timeText,
+                    color = Color.White,
+                    fontSize = timeSize
+                )
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val col = when {
                     (accuracy ?: Float.MAX_VALUE) <= 10f -> Color(0xFF00C853)
