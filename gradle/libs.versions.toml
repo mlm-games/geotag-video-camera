@@ -67,7 +67,7 @@ androidx-camera-video = { group = "androidx.camera", name = "camera-video", vers
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
 maplibre-compose-android = { module = "org.maplibre.compose:maplibre-compose-android", version.ref = "maplibreComposeAndroid" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
-microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.6.244735" }
+microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.14.250932" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastorePreferences" }
 maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
