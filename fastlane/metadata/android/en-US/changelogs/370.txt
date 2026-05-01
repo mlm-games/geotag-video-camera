@@ -1,0 +1,21 @@
+- chore(deps): bump org.maplibre.gl:android-sdk from 13.0.2 to 13.1.0
+- chore(deps): bump gradle-wrapper from 9.4.1 to 9.5.0
+- chore(deps): bump kotlin from 2.3.20 to 2.3.21
+- chore(deps): bump androidx.navigation3:navigation3-runtime
+- chore(deps): bump androidx.navigation:navigation-compose
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump androidx.navigation3:navigation3-ui
+- chore(deps): bump dependabot/fetch-metadata in /.github/workflows
+- chore(deps): bump softprops/action-gh-release in /.github/workflows
+- chore(deps): bump org.microg.gms:play-services-location
+- chore(deps): bump org.jetbrains.kotlinx:kotlinx-serialization-json
+- chore(deps): bump androidx.navigation3:navigation3-ui
+- chore(deps): bump androidx.navigation3:navigation3-runtime
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump org.maplibre.gl:android-sdk from 13.0.1 to 13.0.2
+- chore(deps): bump androidx.media3:media3-common from 1.9.3 to 1.10.0
+- chore(deps): bump androidx.media3:media3-effect from 1.9.3 to 1.10.0
+- chore(deps): bump androidx.media3:media3-transformer
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump camera from 1.5.3 to 1.6.0
+- chore(deps): bump gradle-wrapper from 9.4.0 to 9.4.1
