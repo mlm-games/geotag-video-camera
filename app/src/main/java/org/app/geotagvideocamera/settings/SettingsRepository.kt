@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -70,7 +71,7 @@ class SettingsRepository(private val context: Context) {
 
     private fun alignToStep(v: Float, spec: SliderSpec): Float {
         val clamped = v.coerceIn(spec.min, spec.max)
-        val steps = ((clamped - spec.min) / spec.step).toInt()
+        val steps = ((clamped - spec.min) / spec.step).roundToInt()
         return spec.min + steps * spec.step
     }
 }

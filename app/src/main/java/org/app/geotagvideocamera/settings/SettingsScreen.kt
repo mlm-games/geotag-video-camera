@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import org.app.geotagvideocamera.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -288,7 +289,7 @@ private fun SliderRow(
             Slider(
                 value = v,
                 onValueChange = { raw ->
-                    val steps = ((raw - min) / step).toInt()
+                    val steps = ((raw - min) / step).roundToInt()
                     v = (min + steps * step).coerceIn(min, max)
                 },
                 onValueChangeFinished = { onValue(v) },

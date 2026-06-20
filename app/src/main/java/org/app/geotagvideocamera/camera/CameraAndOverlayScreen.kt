@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -78,6 +79,7 @@ import org.app.geotagvideocamera.map.MapOverlay
 import org.app.geotagvideocamera.settings.SettingsState
 import org.app.geotagvideocamera.settings.SettingsViewModel
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 @Composable
 fun CameraAndOverlayScreen(
@@ -93,17 +95,23 @@ fun CameraAndOverlayScreen(
     val hasCamera = remember {
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
-    val hasLocation = remember {
+    val hasFineLocation = remember {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
+    val hasCoarseLocation = remember {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
     var camGranted by remember { mutableStateOf(hasCamera) }
-    var locGranted by remember { mutableStateOf(hasLocation) }
+    var locGranted by remember { mutableStateOf(hasFineLocation) }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         camGranted = result[Manifest.permission.CAMERA] == true || camGranted
-        locGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true || locGranted
+        locGranted =
+            result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            result[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            hasFineLocation || hasCoarseLocation
     }
 
     var timeText by remember { mutableStateOf("") }
@@ -125,7 +133,10 @@ fun CameraAndOverlayScreen(
     LaunchedEffect(Unit) {
         val req = buildList {
             if (!camGranted) add(Manifest.permission.CAMERA)
-            if (!locGranted) add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (!locGranted) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+                add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
         }
         if (req.isNotEmpty()) permLauncher.launch(req.toTypedArray())
     }
@@ -133,7 +144,11 @@ fun CameraAndOverlayScreen(
     // CameraX provider
     val cameraProvider = remember { mutableStateOf<ProcessCameraProvider?>(null) }
     LaunchedEffect(Unit) {
-        cameraProvider.value = context.getCameraProvider()
+        cameraProvider.value = runCatching { context.getCameraProvider() }.getOrNull()
+    }
+
+    DisposableEffect(cameraProvider.value) {
+        onDispose { cameraProvider.value?.unbindAll() }
     }
 
     // Location tracker
@@ -146,6 +161,10 @@ fun CameraAndOverlayScreen(
         } else {
             if (locGranted) tracker.start() else tracker.stop()
         }
+    }
+
+    DisposableEffect(tracker) {
+        onDispose { tracker.close() }
     }
 
     val locationUi by tracker.state.collectAsStateWithLifecycle()
@@ -258,7 +277,7 @@ fun CameraAndOverlayScreen(
             )
         }
 
-        if (!settings.hideModeButton && !controlsHidden) {
+        if (!controlsHidden) {
             FloatingActionButton(
                 onClick = {
                     when (mode) {
@@ -410,7 +429,13 @@ private suspend fun Context.getCameraProvider(): ProcessCameraProvider =
     suspendCancellableCoroutine { cont ->
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener(
-            { cont.resume(future.get()) },
+            {
+                try {
+                    cont.resume(future.get())
+                } catch (t: Throwable) {
+                    cont.resumeWithException(t)
+                }
+            },
             ContextCompat.getMainExecutor(this)
         )
     }
@@ -465,7 +490,7 @@ private fun TopStatusBar(
                 }
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    text = "±${accuracy?.toInt() ?: 0} m",
+                    text = accuracy?.let { "\u00b1${it.toInt()} m" } ?: "No GPS",
                     color = Color.White,
                     fontSize = accSize
                 )
@@ -635,7 +660,7 @@ private fun OverlayHud(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom,
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(12.dp),
     ) {
         Row(
@@ -662,7 +687,7 @@ private fun OverlayHud(
                     shape = RoundedCornerShape(chipCorner)
                 ) {
                     Text(
-                        text = "±${loc?.accuracyMeters?.toInt() ?: 0} m",
+                        text = loc?.accuracyMeters?.let { "±${it.toInt()} m" } ?: "No GPS",
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = chipPadH, vertical = chipPadV),
                         fontSize = chipFont

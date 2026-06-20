@@ -21,10 +21,12 @@ data class LocationUi(
     val address: String?
 )
 
-class LocationTracker(private val context: Context) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+class LocationTracker(context: Context) {
+    private val appContext = context.toApplicationContext()
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(job + Dispatchers.Default)
     private val client: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context)
+        LocationServices.getFusedLocationProviderClient(appContext)
 
     private val _state = MutableStateFlow<LocationUi?>(null)
     val state: StateFlow<LocationUi?> = _state
@@ -45,7 +47,7 @@ class LocationTracker(private val context: Context) {
             // resolve address asynchronously to avoid jank
             scope.launch(Dispatchers.IO) {
                 try {
-                    if (geocoder == null) geocoder = Geocoder(context, Locale.getDefault())
+                    if (geocoder == null) geocoder = Geocoder(appContext, Locale.getDefault())
                     val g = geocoder ?: return@launch
                     val addresses = g.getFromLocation(l.latitude, l.longitude, 1)
                     val line = addresses?.firstOrNull()?.getAddressLine(0)
@@ -71,7 +73,7 @@ class LocationTracker(private val context: Context) {
 
         scope.launch(Dispatchers.IO) {
             try {
-                if (geocoder == null) geocoder = Geocoder(context, Locale.getDefault())
+                if (geocoder == null) geocoder = Geocoder(appContext, Locale.getDefault())
                 val g = geocoder ?: return@launch
                 val addresses = g.getFromLocation(lat, lon, 1)
                 val line = addresses?.firstOrNull()?.getAddressLine(0)
@@ -100,7 +102,15 @@ class LocationTracker(private val context: Context) {
     fun stop() {
         client.removeLocationUpdates(callback)
     }
+
+    fun close() {
+        stop()
+        job.cancel()
+    }
 }
+
+private fun Context.toApplicationContext(): Context =
+    if (this is android.content.ContextWrapper) baseContext.toApplicationContext() else this
 
 /* Formatting helpers */
 fun formatLatLon(lat: Double, lon: Double): String =

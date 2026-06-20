@@ -123,7 +123,7 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
             R.string.address_inside_bottom,
             R.string.address_below_map
         ),
-        defaultIndex = 0,
+        defaultIndex = 2,
         enabledIf = { it.showMap && it.showAddress }
     ),
 

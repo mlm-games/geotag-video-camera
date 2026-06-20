@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationCompat
 import androidx.core.location.altitude.AltitudeConverterCompat
 import androidx.exifinterface.media.ExifInterface
 import java.io.IOException
@@ -56,12 +57,14 @@ object MediaUtils {
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    output.savedUri?.let { uri ->
-                        location?.let { loc ->
+                    val uri = output.savedUri ?: return
+                    val loc = location
+                    if (loc != null) {
+                        Thread {
                             embedLocationMetadata(context, uri, loc)
-                        }
-                        onPhotoSaved(uri)
+                        }.start()
                     }
+                    onPhotoSaved(uri)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -91,7 +94,7 @@ object MediaUtils {
                 }
 
                 val altitude = when {
-                    loc.hasMslAltitudeD() -> loc.mslAltitudeMetersD
+                    LocationCompat.hasMslAltitude(loc) -> LocationCompat.getMslAltitudeMeters(loc)
                     loc.hasAltitude() -> loc.altitude
                     else -> null
                 }
@@ -100,7 +103,7 @@ object MediaUtils {
                 exif.setLatLong(loc.latitude, loc.longitude)
                 exif.saveAttributes()
 
-                Log.d("MediaUtils", "Location metadata embedded successfully (MSL: ${loc.hasMslAltitudeD()})")
+                Log.d("MediaUtils", "Location metadata embedded successfully (MSL: ${LocationCompat.hasMslAltitude(loc)})")
             }
         } catch (e: IOException) {
             Log.e("MediaUtils", "Error embedding location metadata", e)
@@ -131,8 +134,10 @@ object MediaUtils {
         }
 
         try {
-            resolver.openOutputStream(uri, "w")?.use { out: OutputStream ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)) {
+            val out = resolver.openOutputStream(uri, "w")
+                ?: throw IOException("openOutputStream() returned null")
+            out.use { stream ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, stream)) {
                     throw IOException("Bitmap compress() returned false")
                 }
             }
@@ -150,22 +155,3 @@ object MediaUtils {
         return null
     }
 }
-
-// Extensions
-
-// check if Location has MSL altitude
-private fun Location.hasMslAltitudeD(): Boolean {
-    return if (Build.VERSION.SDK_INT >= 34) {
-        hasMslAltitude()
-    } else {
-        extras?.containsKey("mslAltitude") == true
-    }
-}
-
-// get MSL altitude
-private val Location.mslAltitudeMetersD: Double
-    get() = if (Build.VERSION.SDK_INT >= 34) {
-        mslAltitudeMeters
-    } else {
-        extras?.getDouble("mslAltitude", altitude) ?: altitude
-    }
