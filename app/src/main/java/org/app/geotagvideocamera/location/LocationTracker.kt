@@ -59,9 +59,14 @@ class LocationTracker(context: Context) {
         val g = geocoder ?: Geocoder(appContext, Locale.getDefault()).also { geocoder = it }
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             suspendCancellableCoroutine { cont ->
-                g.getFromLocation(lat, lon, 1) { addresses ->
-                    cont.resume(addresses.firstOrNull())
-                }
+                g.getFromLocation(lat, lon, 1, object : Geocoder.GeocodeListener {
+                    override fun onGeocode(addresses: MutableList<Address>) {
+                        if (cont.isActive) cont.resume(addresses.firstOrNull())
+                    }
+                    override fun onError(errorMessage: String?) {
+                        if (cont.isActive) cont.resume(null)
+                    }
+                })
             }
         } else {
             @Suppress("DEPRECATION")
