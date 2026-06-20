@@ -29,7 +29,7 @@ android {
         minSdk = 24
         targetSdk = 37
         versionCode = 370
-        versionName = "2.3.4"
+        versionName = "2.4.0"
 
         androidResources {
             localeFilters += setOf("en", "ar", "de", "es-rES", "es-rUS", "fr", "hr", "hu", "in", "it", "ja", "pl", "pt-rBR", "ru-rRU", "sv", "tr", "uk", "zh", "cs", "el", "fi", "ko", "nl", "vi")

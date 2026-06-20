@@ -23,7 +23,7 @@ data class LocationUi(
 )
 
 class LocationTracker(context: Context) {
-    private val appContext = context.toApplicationContext()
+    private val appContext = context.applicationContext
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.Default)
     private val client: FusedLocationProviderClient =
@@ -37,6 +37,18 @@ class LocationTracker(context: Context) {
     val lastRawLocation: Location? get() = _lastRawLocation
 
     private var geocoder: Geocoder? = null
+    private var started = false
+    private var lastGeocodeTimeMs = 0L
+    private var lastGeocodeLocation: Location? = null
+    private var geocodeSeq = 0L
+
+    private fun shouldGeocode(location: Location): Boolean {
+        val now = System.currentTimeMillis()
+        val last = lastGeocodeLocation
+        val movedEnough = last == null || last.distanceTo(location) >= 50f
+        val oldEnough = now - lastGeocodeTimeMs >= 15_000L
+        return movedEnough || oldEnough
+    }
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -47,21 +59,37 @@ class LocationTracker(context: Context) {
                 longitude = l.longitude,
                 accuracyMeters = l.accuracy,
                 speedMps = if (l.hasSpeed()) l.speed else null,
-                address = null // filled async below
+                address = null
             )
             _state.value = ui
-            // resolve address asynchronously to avoid jank
+
+            if (!shouldGeocode(l)) return
+
+            lastGeocodeTimeMs = System.currentTimeMillis()
+            lastGeocodeLocation = Location(l)
+            val requestSeq = ++geocodeSeq
+            val lat = l.latitude
+            val lon = l.longitude
+
             scope.launch(Dispatchers.IO) {
                 try {
+                    if (!Geocoder.isPresent()) return@launch
                     if (geocoder == null) geocoder = Geocoder(appContext, Locale.getDefault())
                     val g = geocoder ?: return@launch
-                    val addresses = g.getFromLocation(l.latitude, l.longitude, 1)
-                    val line = addresses?.firstOrNull()?.getAddressLine(0)
-                    if (line != null) {
-                        _state.value = _state.value?.copy(address = line)
+                    val line = g.getFromLocation(lat, lon, 1)
+                        ?.firstOrNull()
+                        ?.getAddressLine(0)
+                    if (line != null && requestSeq == geocodeSeq) {
+                        val current = _state.value
+                        if (
+                            current != null &&
+                            current.latitude == lat &&
+                            current.longitude == lon
+                        ) {
+                            _state.value = current.copy(address = line)
+                        }
                     }
                 } catch (_: Throwable) {
-                    // ignore geocoder failures (no network etc.)
                 }
             }
         }
@@ -85,6 +113,7 @@ class LocationTracker(context: Context) {
 
         scope.launch(Dispatchers.IO) {
             try {
+                if (!Geocoder.isPresent()) return@launch
                 if (geocoder == null) geocoder = Geocoder(appContext, Locale.getDefault())
                 val g = geocoder ?: return@launch
                 val addresses = g.getFromLocation(lat, lon, 1)
@@ -92,7 +121,6 @@ class LocationTracker(context: Context) {
                 if (line != null) {
                     _state.value = _state.value?.copy(address = line)
                 } else {
-                    // fallback label if geocoder returns nothing
                     _state.value = _state.value?.copy(address = "Golden Gate Bridge, San Francisco, CA")
                 }
             } catch (_: Throwable) {
@@ -104,6 +132,8 @@ class LocationTracker(context: Context) {
 
     @SuppressLint("MissingPermission")
     fun start() {
+        if (started) return
+        started = true
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
             .setMinUpdateIntervalMillis(600L)
             .setMinUpdateDistanceMeters(2f)
@@ -112,6 +142,8 @@ class LocationTracker(context: Context) {
     }
 
     fun stop() {
+        if (!started) return
+        started = false
         client.removeLocationUpdates(callback)
     }
 
@@ -120,9 +152,6 @@ class LocationTracker(context: Context) {
         job.cancel()
     }
 }
-
-private fun Context.toApplicationContext(): Context =
-    if (this is android.content.ContextWrapper) baseContext.toApplicationContext() else this
 
 /* Formatting helpers */
 fun formatLatLon(lat: Double, lon: Double): String =

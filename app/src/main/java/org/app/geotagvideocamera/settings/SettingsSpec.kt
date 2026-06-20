@@ -1,6 +1,7 @@
 package org.app.geotagvideocamera.settings
 
 import androidx.annotation.StringRes
+import org.app.geotagvideocamera.BuildConfig
 import org.app.geotagvideocamera.R
 
 enum class SettingCategory(@param:StringRes val titleRes: Int) {
@@ -89,79 +90,84 @@ data class SettingsState(
     val captureEngineIndex: Int = 0 // 0 = Screenshot/legacy, 1 = CameraX photo/video
 )
 
-val SettingsSpecs: List<SettingSpec<*>> = listOf(
-    // Appearance
-    ToggleSpec("dynamicColors", SettingCategory.APPEARANCE, R.string.use_dynamic_colors, default = true),
-    DropdownSpec(
-        id = "themeMode",
-        category = SettingCategory.APPEARANCE,
-        titleRes = R.string.theme,
-        entries = listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark),
-        defaultIndex = 0
-    ),
-    ToggleSpec("compactUi", SettingCategory.APPEARANCE, R.string.compact_ui, default = false),
+val SettingsSpecs: List<SettingSpec<*>> = buildList {
+    addAll(
+        listOf(
+            // Appearance
+            ToggleSpec("dynamicColors", SettingCategory.APPEARANCE, R.string.use_dynamic_colors, default = true),
+            DropdownSpec(
+                id = "themeMode",
+                category = SettingCategory.APPEARANCE,
+                titleRes = R.string.theme,
+                entries = listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark),
+                defaultIndex = 0
+            ),
+            ToggleSpec("compactUi", SettingCategory.APPEARANCE, R.string.compact_ui, default = false),
 
-    // Overlay
-    ToggleSpec("showMap", SettingCategory.OVERLAY, R.string.show_map, default = true),
-    ToggleSpec(
-        id = "showLocationTextWithoutMap",
-        category = SettingCategory.OVERLAY,
-        titleRes = R.string.show_location_text_without_map,
-        default = true,
-        enabledIf = { !it.showMap }
-    ),
-    ToggleSpec("showCoordinates", SettingCategory.OVERLAY, R.string.show_coordinates, default = false),
-    ToggleSpec("showAddress", SettingCategory.OVERLAY, R.string.show_address, default = true),
-    ToggleSpec("showSpeed", SettingCategory.OVERLAY, R.string.show_speed, default = false),
-    ToggleSpec("showGpsStatus", SettingCategory.OVERLAY, R.string.show_gps_status, default = false),
-    DropdownSpec("unitsIndex", SettingCategory.OVERLAY, R.string.units, entries = listOf(R.string.units_metric, R.string.units_imperial), defaultIndex = 0),
-    SliderSpec("mapZoom", SettingCategory.OVERLAY, R.string.map_zoom, min = 4f, max = 20f, step = 1f, default = 15f, enabledIf = { it.showMap }),
-    ToggleSpec("showTopBar", SettingCategory.OVERLAY, R.string.show_top_bar, default = false),
-    DropdownSpec(
-        id = "addressPositionIndex",
-        category = SettingCategory.OVERLAY,
-        titleRes = R.string.address_position,
-        entries = listOf(
-            R.string.address_inside_top,
-            R.string.address_inside_bottom,
-            R.string.address_below_map
-        ),
-        defaultIndex = 2,
-        enabledIf = { it.showMap && it.showAddress }
-    ),
+            // Overlay
+            ToggleSpec("showMap", SettingCategory.OVERLAY, R.string.show_map, default = true),
+            ToggleSpec(
+                id = "showLocationTextWithoutMap",
+                category = SettingCategory.OVERLAY,
+                titleRes = R.string.show_location_text_without_map,
+                default = true,
+                enabledIf = { !it.showMap }
+            ),
+            ToggleSpec("showCoordinates", SettingCategory.OVERLAY, R.string.show_coordinates, default = false),
+            ToggleSpec("showAddress", SettingCategory.OVERLAY, R.string.show_address, default = true),
+            ToggleSpec("showSpeed", SettingCategory.OVERLAY, R.string.show_speed, default = false),
+            ToggleSpec("showGpsStatus", SettingCategory.OVERLAY, R.string.show_gps_status, default = false),
+            DropdownSpec("unitsIndex", SettingCategory.OVERLAY, R.string.units, entries = listOf(R.string.units_metric, R.string.units_imperial), defaultIndex = 0),
+            SliderSpec("mapZoom", SettingCategory.OVERLAY, R.string.map_zoom, min = 4f, max = 20f, step = 1f, default = 15f, enabledIf = { it.showMap }),
+            ToggleSpec("showTopBar", SettingCategory.OVERLAY, R.string.show_top_bar, default = false),
+            DropdownSpec(
+                id = "addressPositionIndex",
+                category = SettingCategory.OVERLAY,
+                titleRes = R.string.address_position,
+                entries = listOf(
+                    R.string.address_inside_top,
+                    R.string.address_inside_bottom,
+                    R.string.address_below_map
+                ),
+                defaultIndex = 2,
+                enabledIf = { it.showMap && it.showAddress }
+            ),
 
-    // Map (provider and keys)
-    DropdownSpec(
-        id = "mapProviderIndex",
-        category = SettingCategory.MAP,
-        titleRes = R.string.map_provider,
-        entries = listOf(R.string.provider_maplibre, R.string.provider_maptiler, R.string.provider_geoapify),
-        defaultIndex = 0
-    ),
-    TextSpec("styleUrl", SettingCategory.MAP, R.string.style_url),
-    TextSpec("maptilerApiKey", SettingCategory.MAP, R.string.maptiler_api_key),
-    TextSpec("geoapifyApiKey", SettingCategory.MAP, R.string.geoapify_api_key),
+            // Map (provider and keys)
+            DropdownSpec(
+                id = "mapProviderIndex",
+                category = SettingCategory.MAP,
+                titleRes = R.string.map_provider,
+                entries = listOf(R.string.provider_maplibre, R.string.provider_maptiler, R.string.provider_geoapify),
+                defaultIndex = 0
+            ),
+            TextSpec("styleUrl", SettingCategory.MAP, R.string.style_url),
+            TextSpec("maptilerApiKey", SettingCategory.MAP, R.string.maptiler_api_key),
+            TextSpec("geoapifyApiKey", SettingCategory.MAP, R.string.geoapify_api_key),
 
-    // Camera
-    DropdownSpec(
-        id = "cameraFacing",
-        category = SettingCategory.CAMERA,
-        titleRes = R.string.camera_facing,
-        entries = listOf(R.string.camera_back, R.string.camera_front),
-        defaultIndex = 0
-    ),
-    ToggleSpec("hideModeButton", SettingCategory.CAMERA, R.string.hide_mode_button, default = true),
-    DropdownSpec(
-        id = "captureEngineIndex",
-        category = SettingCategory.CAMERA,
-        titleRes = R.string.capture_engine,
-        entries = listOf(R.string.capture_screenshot, R.string.capture_camerax),
-        defaultIndex = 0
-    ),
+            // Camera
+            DropdownSpec(
+                id = "cameraFacing",
+                category = SettingCategory.CAMERA,
+                titleRes = R.string.camera_facing,
+                entries = listOf(R.string.camera_back, R.string.camera_front),
+                defaultIndex = 0
+            ),
+            ToggleSpec("hideModeButton", SettingCategory.CAMERA, R.string.hide_mode_button, default = true),
+            DropdownSpec(
+                id = "captureEngineIndex",
+                category = SettingCategory.CAMERA,
+                titleRes = R.string.capture_engine,
+                entries = listOf(R.string.capture_screenshot, R.string.capture_camerax),
+                defaultIndex = 0
+            ),
+        )
+    )
 
-    // System
-    ToggleSpec("debugLocation", SettingCategory.SYSTEM, R.string.debug_location, default = false)
-)
+    if (BuildConfig.DEBUG) {
+        add(ToggleSpec("debugLocation", SettingCategory.SYSTEM, R.string.debug_location, default = false))
+    }
+}
 
 fun SettingsState.isEnabled(spec: SettingSpec<*>): Boolean = when (spec) {
     is ToggleSpec -> spec.enabledIf(this)

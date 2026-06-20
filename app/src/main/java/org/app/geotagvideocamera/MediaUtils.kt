@@ -25,6 +25,8 @@ import java.util.Locale
  */
 object MediaUtils {
 
+    private val mediaExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     /**
      * Captures a photo with embedded location metadata
      */
@@ -58,13 +60,23 @@ object MediaUtils {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     val uri = output.savedUri ?: return
-                    val loc = location
-                    if (loc != null) {
-                        Thread {
-                            embedLocationMetadata(context, uri, loc)
-                        }.start()
+
+                    mediaExecutor.execute {
+                        try {
+                            location?.let { loc ->
+                                embedLocationMetadata(context.applicationContext, uri, loc)
+                            }
+
+                            ContextCompat.getMainExecutor(context).execute {
+                                onPhotoSaved(uri)
+                            }
+                        } catch (t: Throwable) {
+                            Log.e("MediaUtils", "Post-save metadata failed", t)
+                            ContextCompat.getMainExecutor(context).execute {
+                                onPhotoSaved(uri)
+                            }
+                        }
                     }
-                    onPhotoSaved(uri)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -83,14 +95,14 @@ object MediaUtils {
             context.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
                 val exif = ExifInterface(pfd.fileDescriptor)
 
-                // Clone location to avoid mutating the original
                 val loc = Location(location)
 
-                // Convert ellipsoid altitude to MSL (Mean Sea Level)
-                runCatching {
-                    AltitudeConverterCompat.addMslAltitudeToLocation(context, loc)
-                }.onFailure { e ->
-                    Log.w("MediaUtils", "MSL altitude conversion failed", e)
+                if (loc.hasAltitude()) {
+                    runCatching {
+                        AltitudeConverterCompat.addMslAltitudeToLocation(context, loc)
+                    }.onFailure { e ->
+                        Log.w("MediaUtils", "MSL altitude conversion failed", e)
+                    }
                 }
 
                 val altitude = when {
@@ -113,7 +125,7 @@ object MediaUtils {
     /**
      * Save a bitmap to MediaStore under Pictures/GeotagCamera as a JPEG.
      */
-    fun saveBitmapToPictures(context: Context, bitmap: Bitmap): Uri? {
+    fun saveBitmapToPictures(context: Context, bitmap: Bitmap, location: Location? = null): Uri? {
         val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
             .format(System.currentTimeMillis())
         val resolver = context.contentResolver
@@ -146,6 +158,9 @@ object MediaUtils {
                 contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
                 resolver.update(uri, contentValues, null, null)
             }
+
+            location?.let { embedLocationMetadata(context.applicationContext, uri, it) }
+
             return uri
         } catch (e: Exception) {
             Log.e("MediaUtils", "Failed to save bitmap", e)

@@ -25,6 +25,7 @@ import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.video.Quality
+import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
@@ -105,26 +106,14 @@ fun CameraAndOverlayScreen(
     val settings by settingsVm.state.collectAsStateWithLifecycle()
 
     // Permission handling
-    val hasCamera = remember {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-    }
-    val hasFineLocation = remember {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    }
-    val hasCoarseLocation = remember {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    }
-    var camGranted by remember { mutableStateOf(hasCamera) }
-    var locGranted by remember { mutableStateOf(hasFineLocation) }
+    var camGranted by remember { mutableStateOf(context.hasCameraPermission()) }
+    var locGranted by remember { mutableStateOf(context.hasAnyLocationPermission()) }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
-        camGranted = result[Manifest.permission.CAMERA] == true || camGranted
-        locGranted =
-            result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            result[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
-            hasFineLocation || hasCoarseLocation
+        camGranted = context.hasCameraPermission()
+        locGranted = context.hasAnyLocationPermission()
     }
 
     var timeText by remember { mutableStateOf("") }
@@ -165,7 +154,7 @@ fun CameraAndOverlayScreen(
     }
 
     // Location tracker
-    val tracker = remember { LocationTracker(context) }
+    val tracker = remember { LocationTracker(context.applicationContext) }
 
     LaunchedEffect(locGranted, settings.debugLocation) {
         if (settings.debugLocation) {
@@ -180,6 +169,13 @@ fun CameraAndOverlayScreen(
         onDispose { tracker.close() }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            currentRecordingState.value?.close()
+            currentRecordingState.value = null
+        }
+    }
+
     val locationUi by tracker.state.collectAsStateWithLifecycle()
 
     // UI states
@@ -187,7 +183,7 @@ fun CameraAndOverlayScreen(
     var isCapturing by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingStartNanos by remember { mutableLongStateOf(0L) }
-    var currentRecording by remember { mutableStateOf<Recording?>(null) }
+    val currentRecordingState = remember { mutableStateOf<Recording?>(null) }
     val scope = rememberCoroutineScope()
 
     // CameraX Viewfinder state
@@ -210,7 +206,12 @@ fun CameraAndOverlayScreen(
     }
     val recorder = remember {
         Recorder.Builder()
-            .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+            .setQualitySelector(
+                QualitySelector.from(
+                    Quality.HIGHEST,
+                    FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                )
+            )
             .build()
     }
     val videoCapture = remember {
@@ -337,10 +338,15 @@ fun CameraAndOverlayScreen(
                                 scope.launch {
                                     withFrameNanos { }
                                     delay(16)
-                                    val activity = context.findActivity()!!
+                                    val activity = context.findActivity()
+                                    if (activity == null) {
+                                        Toast.makeText(context, "Unable to access activity window", Toast.LENGTH_SHORT).show()
+                                        isCapturing = false
+                                        return@launch
+                                    }
                                     val bmp = copyWindowBitmap(activity)
                                     if (bmp != null) {
-                                        val uri = MediaUtils.saveBitmapToPictures(context, bmp)
+                                        val uri = MediaUtils.saveBitmapToPictures(context, bmp, location = tracker.lastRawLocation)
                                         if (uri != null) {
                                             Toast.makeText(context, "Screenshot saved", Toast.LENGTH_SHORT).show()
                                         }
@@ -354,8 +360,8 @@ fun CameraAndOverlayScreen(
                         CameraMode.VIDEO -> {
                             if (settings.captureEngineIndex == 1) {
                                 if (isRecording) {
-                                    currentRecording?.stop()
-                                    currentRecording = null
+                                    currentRecordingState.value?.stop()
+                                    currentRecordingState.value = null
                                     isRecording = false
                                 } else {
                                     val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
@@ -372,12 +378,17 @@ fun CameraAndOverlayScreen(
                                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                                     ).setContentValues(contentValues).build()
 
-                                    currentRecording = recorder.prepareRecording(context, outputOptions)
+                                    currentRecordingState.value = videoCapture.output
+                                        .prepareRecording(context, outputOptions)
                                         .start(ContextCompat.getMainExecutor(context)) { event ->
                                             when (event) {
                                                 is VideoRecordEvent.Finalize -> {
+                                                    isRecording = false
+                                                    currentRecordingState.value = null
                                                     if (event.hasError()) {
                                                         Toast.makeText(context, "Video recording failed", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                                 else -> {}
@@ -405,7 +416,7 @@ fun CameraAndOverlayScreen(
                 when (mode) {
                     CameraMode.PHOTO -> Icon(
                         imageVector = ImageVector.vectorResource(R.drawable.ic_camera),
-                        contentDescription = "Screenshot"
+                        contentDescription = if (settings.captureEngineIndex == 1) "Take photo" else "Screenshot"
                     )
                     CameraMode.VIDEO -> Icon(
                         imageVector = ImageVector.vectorResource(R.drawable.ic_videocam),
@@ -419,10 +430,9 @@ fun CameraAndOverlayScreen(
             RecordingBar(
                 startNanos = recordingStartNanos,
                 onStop = {
-                    currentRecording?.stop()
-                    currentRecording = null
+                    currentRecordingState.value?.stop()
+                    currentRecordingState.value = null
                     isRecording = false
-                    Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -794,6 +804,13 @@ private tailrec fun Context.findActivity(): Activity? =
         is ContextWrapper -> baseContext.findActivity()
         else -> null
     }
+
+private fun Context.hasCameraPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+private fun Context.hasAnyLocationPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
 private suspend fun copyWindowBitmap(activity: Activity): Bitmap? {
     val decor = activity.window?.decorView ?: return null
