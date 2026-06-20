@@ -46,4 +46,7 @@
     <string name="camera_back">Back camera</string>
     <string name="camera_front">Front camera</string>
     <string name="show_location_text_without_map">Show location text when map hidden</string>
+    <string name="capture_engine">Capture engine</string>
+    <string name="capture_screenshot">Screenshot / Screen Recording</string>
+    <string name="capture_camerax">CameraX Photo / Video</string>
 </resources>

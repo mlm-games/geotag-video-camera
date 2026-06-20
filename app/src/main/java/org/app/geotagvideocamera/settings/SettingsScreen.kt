@@ -142,6 +142,7 @@ fun SettingsScreen(
     "mapProviderIndex" -> s.mapProviderIndex
     "addressPositionIndex" -> s.addressPositionIndex
     "cameraFacing" -> s.cameraFacing
+    "captureEngineIndex" -> s.captureEngineIndex
     else -> 0
 }
 

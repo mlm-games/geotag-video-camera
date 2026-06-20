@@ -83,7 +83,10 @@ data class SettingsState(
 
     // System
     val debugLocation: Boolean = false,
-    val demoNoticeShown: Boolean = false
+    val demoNoticeShown: Boolean = false,
+
+    // Capture
+    val captureEngineIndex: Int = 0 // 0 = Screenshot/legacy, 1 = CameraX photo/video
 )
 
 val SettingsSpecs: List<SettingSpec<*>> = listOf(
@@ -148,6 +151,13 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
         defaultIndex = 0
     ),
     ToggleSpec("hideModeButton", SettingCategory.CAMERA, R.string.hide_mode_button, default = true),
+    DropdownSpec(
+        id = "captureEngineIndex",
+        category = SettingCategory.CAMERA,
+        titleRes = R.string.capture_engine,
+        entries = listOf(R.string.capture_screenshot, R.string.capture_camerax),
+        defaultIndex = 0
+    ),
 
     // System
     ToggleSpec("debugLocation", SettingCategory.SYSTEM, R.string.debug_location, default = false)

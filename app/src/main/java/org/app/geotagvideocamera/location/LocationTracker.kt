@@ -3,6 +3,7 @@ package org.app.geotagvideocamera.location
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Geocoder
+import android.location.Location
 import android.os.Looper
 import com.google.android.gms.location.*
 import kotlinx.coroutines.CoroutineScope
@@ -31,11 +32,16 @@ class LocationTracker(context: Context) {
     private val _state = MutableStateFlow<LocationUi?>(null)
     val state: StateFlow<LocationUi?> = _state
 
+    @Volatile
+    private var _lastRawLocation: Location? = null
+    val lastRawLocation: Location? get() = _lastRawLocation
+
     private var geocoder: Geocoder? = null
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val l = result.lastLocation ?: return
+            _lastRawLocation = l
             val ui = LocationUi(
                 latitude = l.latitude,
                 longitude = l.longitude,
@@ -62,6 +68,12 @@ class LocationTracker(context: Context) {
     }
 
     fun pushDebugLocation(lat: Double, lon: Double) {
+        val mockLocation = Location("debug").apply {
+            this.latitude = lat
+            this.longitude = lon
+            accuracy = 5f
+        }
+        _lastRawLocation = mockLocation
         val ui = LocationUi(
             latitude = lat,
             longitude = lon,

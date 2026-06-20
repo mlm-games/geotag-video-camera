@@ -47,7 +47,10 @@ class SettingsRepository(private val context: Context) {
 
                 // System
                 debugLocation = p[booleanPreferencesKey("debugLocation")] ?: false,
-                demoNoticeShown = p[booleanPreferencesKey("demoNoticeShown")] ?: false
+                demoNoticeShown = p[booleanPreferencesKey("demoNoticeShown")] ?: false,
+
+                // Capture
+                captureEngineIndex = p[intPreferencesKey("captureEngineIndex")] ?: 0
             )
         }
 

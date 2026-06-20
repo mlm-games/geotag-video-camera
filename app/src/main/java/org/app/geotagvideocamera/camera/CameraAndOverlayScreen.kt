@@ -2,21 +2,34 @@ package org.app.geotagvideocamera.camera
 
 import android.Manifest
 import android.app.Activity
+import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.provider.MediaStore
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
 import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.viewfinder.core.ImplementationMode
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -174,6 +187,7 @@ fun CameraAndOverlayScreen(
     var isCapturing by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingStartNanos by remember { mutableLongStateOf(0L) }
+    var currentRecording by remember { mutableStateOf<Recording?>(null) }
     val scope = rememberCoroutineScope()
 
     // CameraX Viewfinder state
@@ -188,8 +202,23 @@ fun CameraAndOverlayScreen(
         }
     }
 
+    // Build ImageCapture and VideoCapture use cases for real camera capture
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+    }
+    val recorder = remember {
+        Recorder.Builder()
+            .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+            .build()
+    }
+    val videoCapture = remember {
+        VideoCapture.withOutput(recorder)
+    }
+
     // Bind camera when provider/permission/settings change
-    LaunchedEffect(camGranted, cameraProvider.value, mode, settings.cameraFacing) {
+    LaunchedEffect(camGranted, cameraProvider.value, mode, settings.cameraFacing, settings.captureEngineIndex) {
         if (!camGranted) return@LaunchedEffect
         val provider = cameraProvider.value ?: return@LaunchedEffect
 
@@ -215,7 +244,14 @@ fun CameraAndOverlayScreen(
 
         runCatching {
             provider.unbindAll()
-            provider.bindToLifecycle(lifecycleOwner, selector, preview)
+            if (settings.captureEngineIndex == 1) {
+                when (mode) {
+                    CameraMode.PHOTO -> provider.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture)
+                    CameraMode.VIDEO -> provider.bindToLifecycle(lifecycleOwner, selector, preview, videoCapture)
+                }
+            } else {
+                provider.bindToLifecycle(lifecycleOwner, selector, preview)
+            }
         }.onFailure { e ->
             android.util.Log.e("CameraPreview", "Failed to bind camera", e)
         }
@@ -282,29 +318,81 @@ fun CameraAndOverlayScreen(
                 onClick = {
                     when (mode) {
                         CameraMode.PHOTO -> {
-                            isCapturing = true
-                            scope.launch {
-                                withFrameNanos { }
-                                delay(16)
-                                val activity = context.findActivity()!!
-                                val bmp = copyWindowBitmap(activity)
-                                if (bmp != null) {
-                                    val uri = MediaUtils.saveBitmapToPictures(context, bmp)
-                                    if (uri != null) {
-                                        Toast.makeText(context, "Screenshot saved", Toast.LENGTH_SHORT).show()
+                            if (settings.captureEngineIndex == 1) {
+                                val loc = tracker.lastRawLocation
+                                MediaUtils.capturePhoto(
+                                    context = context,
+                                    imageCapture = imageCapture,
+                                    location = loc,
+                                    onPhotoSaved = { uri ->
+                                        Toast.makeText(context, "Photo saved", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = { msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                                     }
-                                } else {
-                                    Toast.makeText(context, "Failed to capture screenshot", Toast.LENGTH_SHORT).show()
+                                )
+                            } else {
+                                // Screenshot via PixelCopy
+                                isCapturing = true
+                                scope.launch {
+                                    withFrameNanos { }
+                                    delay(16)
+                                    val activity = context.findActivity()!!
+                                    val bmp = copyWindowBitmap(activity)
+                                    if (bmp != null) {
+                                        val uri = MediaUtils.saveBitmapToPictures(context, bmp)
+                                        if (uri != null) {
+                                            Toast.makeText(context, "Screenshot saved", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "Failed to capture screenshot", Toast.LENGTH_SHORT).show()
+                                    }
+                                    isCapturing = false
                                 }
-                                isCapturing = false
                             }
                         }
                         CameraMode.VIDEO -> {
-                            Toast.makeText(
-                                context,
-                                "Use Android's screen recording feature (from Settings or Quick Tiles)",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            if (settings.captureEngineIndex == 1) {
+                                if (isRecording) {
+                                    currentRecording?.stop()
+                                    currentRecording = null
+                                    isRecording = false
+                                } else {
+                                    val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
+                                        .format(System.currentTimeMillis())
+                                    val contentValues = ContentValues().apply {
+                                        put(MediaStore.MediaColumns.DISPLAY_NAME, "geotag_video_$name.mp4")
+                                        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/GeotagCamera")
+                                        }
+                                    }
+                                    val outputOptions = MediaStoreOutputOptions.Builder(
+                                        context.contentResolver,
+                                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                                    ).setContentValues(contentValues).build()
+
+                                    currentRecording = recorder.prepareRecording(context, outputOptions)
+                                        .start(ContextCompat.getMainExecutor(context)) { event ->
+                                            when (event) {
+                                                is VideoRecordEvent.Finalize -> {
+                                                    if (event.hasError()) {
+                                                        Toast.makeText(context, "Video recording failed", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                                else -> {}
+                                            }
+                                        }
+                                    recordingStartNanos = System.nanoTime()
+                                    isRecording = true
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Use Android's screen recording feature (from Settings or Quick Tiles)",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     }
                 },
@@ -331,6 +419,8 @@ fun CameraAndOverlayScreen(
             RecordingBar(
                 startNanos = recordingStartNanos,
                 onStop = {
+                    currentRecording?.stop()
+                    currentRecording = null
                     isRecording = false
                     Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
                 },
