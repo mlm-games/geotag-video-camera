@@ -169,13 +169,6 @@ fun CameraAndOverlayScreen(
         onDispose { tracker.close() }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            currentRecordingState.value?.close()
-            currentRecordingState.value = null
-        }
-    }
-
     val locationUi by tracker.state.collectAsStateWithLifecycle()
 
     // UI states
@@ -185,6 +178,13 @@ fun CameraAndOverlayScreen(
     var recordingStartNanos by remember { mutableLongStateOf(0L) }
     val currentRecordingState = remember { mutableStateOf<Recording?>(null) }
     val scope = rememberCoroutineScope()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            currentRecordingState.value?.close()
+            currentRecordingState.value = null
+        }
+    }
 
     // CameraX Viewfinder state
     val surfaceRequestState = remember { mutableStateOf<SurfaceRequest?>(null) }
