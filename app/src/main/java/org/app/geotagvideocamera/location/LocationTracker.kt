@@ -2,8 +2,10 @@ package org.app.geotagvideocamera.location
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.location.Address
 import android.location.Geocoder
 import android.location.Location
+import android.os.Build
 import android.os.Looper
 import com.google.android.gms.location.*
 import kotlinx.coroutines.CoroutineScope
@@ -12,7 +14,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
+import kotlin.coroutines.resume
 
 data class LocationUi(
     val latitude: Double,
@@ -50,6 +54,21 @@ class LocationTracker(context: Context) {
         return movedEnough || oldEnough
     }
 
+    private suspend fun geocode(lat: Double, lon: Double): Address? {
+        if (!Geocoder.isPresent()) return null
+        val g = geocoder ?: Geocoder(appContext, Locale.getDefault()).also { geocoder = it }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            suspendCancellableCoroutine { cont ->
+                g.getFromLocation(lat, lon, 1) { addresses ->
+                    cont.resume(addresses.firstOrNull())
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            g.getFromLocation(lat, lon, 1)?.firstOrNull()
+        }
+    }
+
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val l = result.lastLocation ?: return
@@ -72,24 +91,16 @@ class LocationTracker(context: Context) {
             val lon = l.longitude
 
             scope.launch(Dispatchers.IO) {
-                try {
-                    if (!Geocoder.isPresent()) return@launch
-                    if (geocoder == null) geocoder = Geocoder(appContext, Locale.getDefault())
-                    val g = geocoder ?: return@launch
-                    val line = g.getFromLocation(lat, lon, 1)
-                        ?.firstOrNull()
-                        ?.getAddressLine(0)
-                    if (line != null && requestSeq == geocodeSeq) {
-                        val current = _state.value
-                        if (
-                            current != null &&
-                            current.latitude == lat &&
-                            current.longitude == lon
-                        ) {
-                            _state.value = current.copy(address = line)
-                        }
+                val line = geocode(lat, lon)?.getAddressLine(0)
+                if (line != null && requestSeq == geocodeSeq) {
+                    val current = _state.value
+                    if (
+                        current != null &&
+                        current.latitude == lat &&
+                        current.longitude == lon
+                    ) {
+                        _state.value = current.copy(address = line)
                     }
-                } catch (_: Throwable) {
                 }
             }
         }
@@ -112,20 +123,10 @@ class LocationTracker(context: Context) {
         _state.value = ui
 
         scope.launch(Dispatchers.IO) {
-            try {
-                if (!Geocoder.isPresent()) return@launch
-                if (geocoder == null) geocoder = Geocoder(appContext, Locale.getDefault())
-                val g = geocoder ?: return@launch
-                val addresses = g.getFromLocation(lat, lon, 1)
-                val line = addresses?.firstOrNull()?.getAddressLine(0)
-                if (line != null) {
-                    _state.value = _state.value?.copy(address = line)
-                } else {
-                    _state.value = _state.value?.copy(address = "Golden Gate Bridge, San Francisco, CA")
-                }
-            } catch (_: Throwable) {
-                _state.value = _state.value?.copy(address = "Golden Gate Bridge, San Francisco, CA")
-            }
+            val line = geocode(lat, lon)?.getAddressLine(0)
+            _state.value = _state.value?.copy(
+                address = line ?: "Golden Gate Bridge, San Francisco, CA"
+            )
         }
     }
 
