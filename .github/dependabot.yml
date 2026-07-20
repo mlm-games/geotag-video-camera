@@ -5,11 +5,16 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
-    target-branch: "master"
-    labels: [ "dependencies", "android", "security" ]
-
+    labels:
+      - "dependencies"
+      - "android"
+      - "security"
+      
   - package-ecosystem: "github-actions"
-    directory: "/.github/workflows"
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github-actions"
