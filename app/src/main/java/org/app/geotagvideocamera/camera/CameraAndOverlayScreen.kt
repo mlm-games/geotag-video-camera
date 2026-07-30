@@ -333,12 +333,14 @@ fun CameraAndOverlayScreen(
                         CameraMode.PHOTO -> {
                             if (settings.captureEngineIndex == 1) {
                                 val loc = tracker.lastRawLocation
-                                MediaUtils.capturePhoto(
+                                MediaUtils.capturePhotoWithOverlay(
                                     context = context,
                                     imageCapture = imageCapture,
                                     location = loc,
+                                    locationUi = locationUi,
+                                    settings = settings,
                                     onPhotoSaved = { uri ->
-                                        Toast.makeText(context, "Photo saved", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Photo saved (overlay)", Toast.LENGTH_SHORT).show()
                                     },
                                     onError = { msg ->
                                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
