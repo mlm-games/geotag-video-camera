@@ -49,4 +49,6 @@
     <string name="capture_engine">Capture engine</string>
     <string name="capture_screenshot">Screenshot / Screen Recording</string>
     <string name="capture_camerax">CameraX Photo / Video</string>
+    <string name="show_qr_code">Show location QR code</string>
+    <string name="qr_code_cd">Location QR code</string>
 </resources>

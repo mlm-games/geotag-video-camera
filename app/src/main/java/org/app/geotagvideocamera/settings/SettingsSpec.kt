@@ -63,6 +63,7 @@ data class SettingsState(
     val showMap: Boolean = true,
     val showCoordinates: Boolean = false,
     val showAddress: Boolean = true,
+    val showQrCode: Boolean = false,
     val showSpeed: Boolean = false,
     val showGpsStatus: Boolean = false,
     val unitsIndex: Int = 0, // 0 metric, 1 imperial
@@ -112,6 +113,7 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
     ),
     ToggleSpec("showCoordinates", SettingCategory.OVERLAY, R.string.show_coordinates, default = false),
     ToggleSpec("showAddress", SettingCategory.OVERLAY, R.string.show_address, default = true),
+    ToggleSpec("showQrCode", SettingCategory.OVERLAY, R.string.show_qr_code, default = false),
     ToggleSpec("showSpeed", SettingCategory.OVERLAY, R.string.show_speed, default = false),
     ToggleSpec("showGpsStatus", SettingCategory.OVERLAY, R.string.show_gps_status, default = false),
     DropdownSpec("unitsIndex", SettingCategory.OVERLAY, R.string.units, entries = listOf(R.string.units_metric, R.string.units_imperial), defaultIndex = 0),

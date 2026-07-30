@@ -32,6 +32,8 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.viewfinder.core.ImplementationMode
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +67,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -90,6 +94,7 @@ import org.app.geotagvideocamera.location.LocationUi
 import org.app.geotagvideocamera.location.formatLatLon
 import org.app.geotagvideocamera.location.formatSpeed
 import org.app.geotagvideocamera.map.MapOverlay
+import org.app.geotagvideocamera.qr.QrCodeGenerator
 import org.app.geotagvideocamera.settings.SettingsState
 import org.app.geotagvideocamera.settings.SettingsViewModel
 import kotlin.coroutines.resume
@@ -302,6 +307,13 @@ fun CameraAndOverlayScreen(
             settings = settings,
             loc = locationUi
         )
+
+        if (settings.showQrCode) {
+            LocationQrOverlay(
+                settings = settings,
+                loc = locationUi
+            )
+        }
 
         val controlsHidden = isCapturing || isRecording
         if (!settings.hideModeButton && !controlsHidden) {
@@ -743,6 +755,45 @@ private fun BoxScope.StandaloneLocationOverlay(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun BoxScope.LocationQrOverlay(
+    settings: SettingsState,
+    loc: LocationUi?
+) {
+    val lat = loc?.latitude
+    val lon = loc?.longitude
+    if (lat == null || lon == null) return
+
+    val payload = remember(lat, lon, loc.address) {
+        QrCodeGenerator.buildLocationPayload(lat, lon, loc.address)
+    }
+    val qrSizeDp = if (settings.compactUi) 72.dp else 96.dp
+    val bmp = remember(payload, settings.compactUi) {
+        val px = if (settings.compactUi) 256 else 320
+        QrCodeGenerator.encodeToBitmap(payload, px)
+    } ?: return
+
+    Surface(
+        color = Color.White,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(top = if (settings.showTopBar) 56.dp else 12.dp, end = 12.dp)
+            .zIndex(2f)
+    ) {
+        Image(
+            painter = BitmapPainter(bmp.asImageBitmap()),
+            contentDescription = "Location QR code",
+            modifier = Modifier
+                .padding(6.dp)
+                .size(qrSizeDp)
+                .background(Color.White),
+            contentScale = ContentScale.Fit
+        )
     }
 }
 

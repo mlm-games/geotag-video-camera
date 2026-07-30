@@ -28,6 +28,7 @@ kotlinxSerializationJson = "1.11.0"
 navigation3Runtime = "1.1.5"
 profileinstaller = "1.4.1"
 apkDist = "0.5.2"
+zxing = "3.5.3"
 
 
 [libraries]
@@ -74,6 +75,7 @@ maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "mapl
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3Runtime" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

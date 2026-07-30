@@ -180,4 +180,7 @@ dependencies {
 
     // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+
+    // QRcode gen
+    implementation(libs.zxing.core)
 }

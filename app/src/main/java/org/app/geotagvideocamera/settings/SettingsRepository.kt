@@ -27,6 +27,7 @@ class SettingsRepository(private val context: Context) {
                 showMap = p[booleanPreferencesKey("showMap")] ?: true,
                 showCoordinates = p[booleanPreferencesKey("showCoordinates")] ?: false,
                 showAddress = p[booleanPreferencesKey("showAddress")] ?: true,
+                showQrCode = p[booleanPreferencesKey("showQrCode")] ?: false,
                 showSpeed = p[booleanPreferencesKey("showSpeed")] ?: false,
                 showGpsStatus = p[booleanPreferencesKey("showGpsStatus")] ?: false,
                 unitsIndex = p[intPreferencesKey("unitsIndex")] ?: 0,

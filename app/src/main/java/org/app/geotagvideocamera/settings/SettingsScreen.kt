@@ -133,6 +133,7 @@ fun SettingsScreen(
     "debugLocation" -> s.debugLocation
     "showTopBar" -> s.showTopBar
     "showLocationTextWithoutMap" -> s.showLocationTextWithoutMap
+    "showQrCode" -> s.showQrCode
     else -> false
 }
 
