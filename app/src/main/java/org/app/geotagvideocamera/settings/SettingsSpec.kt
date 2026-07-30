@@ -1,5 +1,7 @@
 package org.app.geotagvideocamera.settings
 
+import android.content.Context
+import android.content.res.Configuration
 import androidx.annotation.StringRes
 import org.app.geotagvideocamera.R
 
@@ -88,7 +90,19 @@ data class SettingsState(
 
     // Capture
     val captureEngineIndex: Int = 0 // 0 = Screenshot/legacy, 1 = CameraX photo/video
-)
+) {
+    fun isDarkTheme(context: Context): Boolean = when (themeMode) {
+        2 -> true
+        1 -> false
+        else -> (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    fun isDarkTheme(isSystemDark: Boolean): Boolean = when (themeMode) {
+        2 -> true
+        1 -> false
+        else -> isSystemDark
+    }
+}
 
 val SettingsSpecs: List<SettingSpec<*>> = listOf(
     // Appearance

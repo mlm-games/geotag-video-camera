@@ -183,7 +183,7 @@ object MediaUtils {
                                     lat = locationUi.latitude,
                                     lon = locationUi.longitude,
                                     zoom = settings.mapZoom,
-                                    styleUrl = resolveStyleUrl(settings),
+                                    styleUrl = resolveStyleUrl(settings, context),
                                     targetWidth = (mutable.width * 0.38f).toInt().coerceIn(200, 1200),
                                     targetHeight = (mutable.width * 0.44f).toInt().coerceIn(240, 1400)
                                 )
@@ -443,7 +443,7 @@ object MediaUtils {
                         lat = locationUi.latitude,
                         lon = locationUi.longitude,
                         zoom = settings.mapZoom,
-                        styleUrl = org.app.geotagvideocamera.map.resolveStyleUrl(settings),
+                        styleUrl = resolveStyleUrl(settings, context),
                         targetWidth = 400,
                         targetHeight = 480
                     )

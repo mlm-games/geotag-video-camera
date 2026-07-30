@@ -1,5 +1,6 @@
 package org.app.geotagvideocamera.map
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -20,13 +21,15 @@ fun MapOverlay(
     lon: Double?,
     modifier: Modifier = Modifier
 ) {
+    val isDark = settings.isDarkTheme(isSystemInDarkTheme())
     val styleUrl = remember(
         settings.mapProviderIndex,
         settings.styleUrl,
         settings.maptilerApiKey,
-        settings.geoapifyApiKey
+        settings.geoapifyApiKey,
+        isDark
     ) {
-        resolveStyleUrl(settings)
+        resolveStyleUrl(settings, isDark)
     }
 
     val initialLat = lat ?: 0.0

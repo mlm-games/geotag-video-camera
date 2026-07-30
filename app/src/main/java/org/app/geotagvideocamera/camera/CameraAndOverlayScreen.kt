@@ -586,7 +586,7 @@ private fun TopStatusBar(
     val accSize = if (dense) 10.sp else 12.sp
 
     Surface(
-        color = Color.Transparent.copy(alpha = 0.5f),
+        color = Color.Transparent, // .copy(alpha = 0.5f),
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(corner),
         modifier = Modifier
@@ -854,7 +854,7 @@ private fun OverlayHud(
 
             if (settings.showGpsStatus) {
                 Surface(
-                    color = Color.Transparent.copy(alpha = 0.5f),
+                    color = Color.Black.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(chipCorner)
                 ) {
                     Text(
