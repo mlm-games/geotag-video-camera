@@ -14,6 +14,7 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.widget.Toast
 import java.text.SimpleDateFormat
+import java.util.Collections
 import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,6 +63,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,9 +84,13 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import org.app.geotagvideocamera.LocationSample
+import org.app.geotagvideocamera.MapSample
 import org.app.geotagvideocamera.CameraMode
 import org.app.geotagvideocamera.CameraModeToggle
 import org.app.geotagvideocamera.MediaUtils
@@ -94,6 +100,7 @@ import org.app.geotagvideocamera.location.LocationUi
 import org.app.geotagvideocamera.location.formatLatLon
 import org.app.geotagvideocamera.location.formatSpeed
 import org.app.geotagvideocamera.map.MapOverlay
+import org.app.geotagvideocamera.map.resolveStyleUrl
 import org.app.geotagvideocamera.qr.QrCodeGenerator
 import org.app.geotagvideocamera.settings.SettingsState
 import org.app.geotagvideocamera.settings.SettingsViewModel
@@ -181,8 +188,54 @@ fun CameraAndOverlayScreen(
     var isCapturing by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingStartNanos by remember { mutableLongStateOf(0L) }
+    var recordingStartEpochMs by remember { mutableLongStateOf(0L) }
+    val recordingLocationSamples = remember { Collections.synchronizedList(mutableListOf<LocationSample>()) }
+    val recordingMapSamples = remember { Collections.synchronizedList(mutableListOf<MapSample>()) }
     val currentRecordingState = remember { mutableStateOf<Recording?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Collect location samples during recording for time-series video overlay
+    LaunchedEffect(isRecording) {
+        if (!isRecording) return@LaunchedEffect
+        val startNanos = recordingStartNanos
+        snapshotFlow { locationUi }
+            .collect { ui ->
+                if (ui != null) {
+                    val tUs = (System.nanoTime() - startNanos) / 1_000
+                    recordingLocationSamples.add(LocationSample(tUs, ui))
+                }
+            }
+    }
+
+    // Collect periodic map snapshots during recording for moving map overlay
+    LaunchedEffect(isRecording, settings.showMap) {
+        if (!isRecording || !settings.showMap) return@LaunchedEffect
+        val startNanos = recordingStartNanos
+        while (isRecording) {
+            val ui = locationUi
+            if (ui?.latitude != null && ui.longitude != null) {
+                val tUs = (System.nanoTime() - startNanos) / 1_000
+                val bmp = withContext(Dispatchers.IO) {
+                    MediaUtils.captureMapSnapshot(
+                        context = context,
+                        lat = ui.latitude,
+                        lon = ui.longitude,
+                        zoom = settings.mapZoom,
+                        styleUrl = resolveStyleUrl(settings, context),
+                        targetWidth = 400,
+                        targetHeight = 480
+                    )
+                }
+                if (bmp != null) {
+                    if (recordingMapSamples.size >= 40) {
+                        recordingMapSamples.removeAt(0).bitmap.recycle()
+                    }
+                    recordingMapSamples.add(MapSample(tUs, bmp))
+                }
+            }
+            delay(2000)
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -409,8 +462,10 @@ fun CameraAndOverlayScreen(
                                                                 context = context,
                                                                 inputUri = videoUri,
                                                                 originalUri = videoUri,
-                                                                locationUi = locationUi,
+                                                                locationSamples = recordingLocationSamples.toList(),
+                                                                mapSamples = recordingMapSamples.toList(),
                                                                 settings = settings,
+                                                                recordingStartEpochMs = recordingStartEpochMs,
                                                                 onComplete = { uri ->
                                                                     Toast.makeText(context, "Recording saved (with overlay)", Toast.LENGTH_SHORT).show()
                                                                 },
@@ -427,6 +482,13 @@ fun CameraAndOverlayScreen(
                                             }
                                         }
                                     recordingStartNanos = System.nanoTime()
+                                    recordingStartEpochMs = System.currentTimeMillis()
+                                    recordingLocationSamples.clear()
+                                    recordingMapSamples.forEach { it.bitmap.recycle() }
+                                    recordingMapSamples.clear()
+                                    locationUi?.let { ui ->
+                                        recordingLocationSamples.add(LocationSample(0L, ui))
+                                    }
                                     isRecording = true
                                 }
                             } else {

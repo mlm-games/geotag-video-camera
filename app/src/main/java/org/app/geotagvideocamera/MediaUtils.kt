@@ -45,6 +45,16 @@ import org.app.geotagvideocamera.map.resolveStyleUrl
 import org.app.geotagvideocamera.qr.QrCodeGenerator
 import org.app.geotagvideocamera.settings.SettingsState
 
+data class LocationSample(
+    val timeUs: Long,
+    val location: LocationUi
+)
+
+data class MapSample(
+    val timeUs: Long,
+    val bitmap: Bitmap
+)
+
 /**
  * Utility class for handling media capture and metadata embedding
  */
@@ -380,7 +390,7 @@ object MediaUtils {
         }
     }
 
-    private fun captureMapSnapshot(
+    internal fun captureMapSnapshot(
         context: Context,
         lat: Double,
         lon: Double,
@@ -417,12 +427,48 @@ object MediaUtils {
         return result
     }
 
+    private fun findNearestLocation(samples: List<LocationSample>, timeUs: Long): LocationUi? {
+        if (samples.isEmpty()) return null
+        var lo = 0
+        var hi = samples.lastIndex
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (samples[mid].timeUs < timeUs) lo = mid + 1 else hi = mid
+        }
+        val a = samples[lo]
+        val b = samples.getOrNull(lo - 1)
+        return when {
+            b == null -> a.location
+            kotlin.math.abs(a.timeUs - timeUs) <= kotlin.math.abs(b.timeUs - timeUs) -> a.location
+            else -> b.location
+        }
+    }
+
+    private fun findNearestMap(samples: List<MapSample>, timeUs: Long): Bitmap? {
+        if (samples.isEmpty()) return null
+        var lo = 0
+        var hi = samples.lastIndex
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (samples[mid].timeUs < timeUs) lo = mid + 1 else hi = mid
+        }
+        val a = samples[lo]
+        val b = samples.getOrNull(lo - 1)
+        return when {
+            b == null -> a.bitmap
+            kotlin.math.abs(a.timeUs - timeUs) <= kotlin.math.abs(b.timeUs - timeUs) -> a.bitmap
+            else -> b.bitmap
+        }
+    }
+
     fun processVideoWithOverlay(
         context: Context,
         inputUri: Uri,
         originalUri: Uri,
-        locationUi: LocationUi?,
+        locationSamples: List<LocationSample>,
+        mapSamples: List<MapSample>,
         settings: SettingsState,
+        recordingStartEpochMs: Long,
         onComplete: (Uri) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -437,16 +483,18 @@ object MediaUtils {
                     tempInput.outputStream().use { out -> inp.copyTo(out) }
                 }
 
-                val mapBmp = if (settings.showMap && locationUi?.latitude != null) {
-                    captureMapSnapshot(
-                        context = context,
-                        lat = locationUi.latitude,
-                        lon = locationUi.longitude,
-                        zoom = settings.mapZoom,
-                        styleUrl = resolveStyleUrl(settings, context),
-                        targetWidth = 400,
-                        targetHeight = 480
-                    )
+                val fallbackMap = if (mapSamples.isEmpty() && settings.showMap) {
+                    locationSamples.lastOrNull()?.location?.let { loc ->
+                        captureMapSnapshot(
+                            context = context,
+                            lat = loc.latitude,
+                            lon = loc.longitude,
+                            zoom = settings.mapZoom,
+                            styleUrl = resolveStyleUrl(settings, context),
+                            targetWidth = 400,
+                            targetHeight = 480
+                        )
+                    }
                 } else null
 
                 Handler(Looper.getMainLooper()).postDelayed({
@@ -454,7 +502,16 @@ object MediaUtils {
 
                     val overlay = object : CanvasOverlay(true) {
                         override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
-                            drawVideoOverlays(canvas, locationUi, settings, mapBmp)
+                            val loc = findNearestLocation(locationSamples, presentationTimeUs)
+                            val mapBmp = findNearestMap(mapSamples, presentationTimeUs) ?: fallbackMap
+                            drawVideoOverlays(
+                                canvas = canvas,
+                                loc = loc,
+                                settings = settings,
+                                mapBitmap = mapBmp,
+                                presentationTimeUs = presentationTimeUs,
+                                recordingStartEpochMs = recordingStartEpochMs
+                            )
                         }
                     }
 
@@ -471,7 +528,8 @@ object MediaUtils {
                             val savedUri = saveVideoToMediaStore(context, tempOutput)
                             tempOutput.delete()
                             tempInput.delete()
-                            mapBmp?.recycle()
+                            mapSamples.forEach { it.bitmap.recycle() }
+                            fallbackMap?.recycle()
                             ContextCompat.getMainExecutor(context).execute {
                                 if (savedUri != null) {
                                     runCatching { context.contentResolver.delete(originalUri, null, null) }
@@ -484,7 +542,8 @@ object MediaUtils {
                             Log.e("MediaUtils", "Video overlay failed", exception)
                             tempOutput.delete()
                             tempInput.delete()
-                            mapBmp?.recycle()
+                            mapSamples.forEach { it.bitmap.recycle() }
+                            fallbackMap?.recycle()
                             ContextCompat.getMainExecutor(context).execute {
                                 onError("Video processing: ${exception.message}")
                             }
@@ -493,10 +552,11 @@ object MediaUtils {
 
                     transformer.addListener(listener)
                     transformer.start(editedMediaItem, tempOutput.absolutePath)
-                }, 1500)
+                }, 500)
             } catch (e: Exception) {
                 tempInput.delete()
                 tempOutput.delete()
+                mapSamples.forEach { it.bitmap.recycle() }
                 ContextCompat.getMainExecutor(context).execute {
                     onError("Failed to prepare video: ${e.message}")
                 }
@@ -504,7 +564,14 @@ object MediaUtils {
         }
     }
 
-    private fun drawVideoOverlays(canvas: Canvas, loc: LocationUi?, settings: SettingsState, mapBitmap: Bitmap? = null) {
+    private fun drawVideoOverlays(
+        canvas: Canvas,
+        loc: LocationUi?,
+        settings: SettingsState,
+        mapBitmap: Bitmap? = null,
+        presentationTimeUs: Long = 0L,
+        recordingStartEpochMs: Long = System.currentTimeMillis()
+    ) {
         val scale = canvas.width / 1080f
         val pad = 24f * scale
         val w = canvas.width.toFloat()
@@ -522,8 +589,9 @@ object MediaUtils {
         val whitePaint = Paint().apply { color = android.graphics.Color.WHITE }
 
         if (settings.showTopBar) {
-            val date = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(System.currentTimeMillis())
-            val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(System.currentTimeMillis())
+            val videoTimeMs = recordingStartEpochMs + presentationTimeUs / 1000
+            val date = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(videoTimeMs)
+            val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(videoTimeMs)
             val acc = loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS"
             textPaint.textSize = 30f * scale
             canvas.drawText(time, pad, pad + textPaint.textSize, textPaint)
