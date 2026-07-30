@@ -402,7 +402,25 @@ fun CameraAndOverlayScreen(
                                                     if (event.hasError()) {
                                                         Toast.makeText(context, "Video recording failed", Toast.LENGTH_SHORT).show()
                                                     } else {
-                                                        Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
+                                                        val videoUri = event.outputResults.outputUri
+                                                        if (videoUri != null && (settings.showQrCode || settings.showTopBar || settings.showSpeed || settings.showGpsStatus || settings.showCoordinates || settings.showMap)) {
+                                                            Toast.makeText(context, "Processing overlays...", Toast.LENGTH_SHORT).show()
+                                                            MediaUtils.processVideoWithOverlay(
+                                                                context = context,
+                                                                inputUri = videoUri,
+                                                                originalUri = videoUri,
+                                                                locationUi = locationUi,
+                                                                settings = settings,
+                                                                onComplete = { uri ->
+                                                                    Toast.makeText(context, "Recording saved (with overlay)", Toast.LENGTH_SHORT).show()
+                                                                },
+                                                                onError = { msg ->
+                                                                    Toast.makeText(context, "Raw recording saved (overlay failed: $msg)", Toast.LENGTH_LONG).show()
+                                                                }
+                                                            )
+                                                        } else {
+                                                            Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
+                                                        }
                                                     }
                                                 }
                                                 else -> {}
@@ -568,7 +586,7 @@ private fun TopStatusBar(
     val accSize = if (dense) 10.sp else 12.sp
 
     Surface(
-        color = Color.Black.copy(alpha = 0.5f),
+        color = Color.Transparent.copy(alpha = 0.5f),
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(corner),
         modifier = Modifier
@@ -836,7 +854,7 @@ private fun OverlayHud(
 
             if (settings.showGpsStatus) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.5f),
+                    color = Color.Transparent.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(chipCorner)
                 ) {
                     Text(
