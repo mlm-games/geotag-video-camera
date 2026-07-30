@@ -28,7 +28,7 @@ kotlinxSerializationJson = "1.11.0"
 navigation3Runtime = "1.1.5"
 profileinstaller = "1.4.1"
 apkDist = "0.5.2"
-zxing = "3.5.3"
+zxing = "3.5.4"
 
 
 [libraries]
