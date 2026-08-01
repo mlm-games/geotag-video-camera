@@ -1,3 +1,8 @@
+## v2.5.2
+
+- chore(deps): bump com.google.zxing:core from 3.5.3 to 3.5.4
+
+
 ## v2.5.1
 
 - use the free map fallback
