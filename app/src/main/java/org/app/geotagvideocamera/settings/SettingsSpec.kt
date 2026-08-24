@@ -72,6 +72,7 @@ data class SettingsState(
     val mapZoom: Float = 15f,
     val showTopBar: Boolean = false,
     val addressPositionIndex: Int = 2,
+    val mapPositionIndex: Int = 0, // 0 auto, 1 bottom center, 2 bottom start, 3 bottom end
     val showLocationTextWithoutMap: Boolean = true,
 
     // Map
@@ -102,6 +103,16 @@ data class SettingsState(
         1 -> false
         else -> isSystemDark
     }
+}
+
+fun SettingsState.effectiveMapPosition(isLandscape: Boolean): Int = when (mapPositionIndex) {
+    0 -> if (isLandscape) 3 else 1 // Auto → side pane in landscape
+    else -> mapPositionIndex.coerceIn(1, 3)
+}
+
+fun SettingsState.isSideMapPlacement(isLandscape: Boolean): Boolean {
+    val p = effectiveMapPosition(isLandscape)
+    return p == 2 || p == 3
 }
 
 val SettingsSpecs: List<SettingSpec<*>> = listOf(
@@ -144,6 +155,19 @@ val SettingsSpecs: List<SettingSpec<*>> = listOf(
         ),
         defaultIndex = 2,
         enabledIf = { it.showMap && it.showAddress }
+    ),
+    DropdownSpec(
+        id = "mapPositionIndex",
+        category = SettingCategory.OVERLAY,
+        titleRes = R.string.map_position,
+        entries = listOf(
+            R.string.map_position_auto,
+            R.string.map_position_bottom_center,
+            R.string.map_position_bottom_left,
+            R.string.map_position_bottom_right
+        ),
+        defaultIndex = 0,
+        enabledIf = { it.showMap }
     ),
 
     // Map (provider and keys)

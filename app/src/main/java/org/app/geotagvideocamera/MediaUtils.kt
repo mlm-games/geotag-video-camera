@@ -44,6 +44,7 @@ import org.app.geotagvideocamera.location.formatSpeed
 import org.app.geotagvideocamera.map.resolveStyleUrl
 import org.app.geotagvideocamera.qr.QrCodeGenerator
 import org.app.geotagvideocamera.settings.SettingsState
+import org.app.geotagvideocamera.settings.effectiveMapPosition
 
 data class LocationSample(
     val timeUs: Long,
@@ -164,6 +165,8 @@ object MediaUtils {
         location: Location?,
         locationUi: LocationUi?,
         settings: SettingsState,
+        dragFractionX: Float = 0f,
+        dragFractionY: Float = 0f,
         onPhotoSaved: (Uri) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -199,7 +202,14 @@ object MediaUtils {
                                 )
                             } else null
 
-                            compositeOverlays(mutable, locationUi, settings, mapBmp)
+                            compositeOverlays(
+                                mutable,
+                                locationUi,
+                                settings,
+                                mapBmp,
+                                dragFractionX,
+                                dragFractionY
+                            )
                             mapBmp?.recycle()
 
                             val uri = saveBitmapToPictures(context, mutable, location)
@@ -225,11 +235,75 @@ object MediaUtils {
         )
     }
 
+    private data class MapCardLayout(
+        val cardW: Float,
+        val cardH: Float,
+        val cardX: Float,
+        val cardY: Float,
+        val sidePane: Boolean
+    )
+
+    private fun computeMapCardLayout(
+        w: Float,
+        h: Float,
+        scale: Float,
+        settings: SettingsState,
+        mapBitmap: Bitmap,
+        isLandscape: Boolean,
+        dragFracX: Float = 0f,
+        dragFracY: Float = 0f
+    ): MapCardLayout {
+        val pos = settings.effectiveMapPosition(isLandscape)
+        val sidePane = pos == 2 || pos == 3
+        val aspect = mapBitmap.height.toFloat() / mapBitmap.width.toFloat()
+
+        // Side pane / landscape frames size from the shorter edge so the subject stays clear
+        val sideSized = sidePane || isLandscape
+        var cardW = minOf(w, h) * when {
+            sideSized && settings.compactUi -> 0.28f
+            sideSized -> 0.32f
+            settings.compactUi -> 0.30f
+            else -> 0.38f
+        }
+        var cardH = cardW * aspect
+        val maxH = h * (if (sideSized) 0.55f else 0.75f)
+        if (cardH > maxH) {
+            cardH = maxH
+            cardW = cardH / aspect
+        }
+
+        val showAddrBelow = settings.showAddress && settings.addressPositionIndex == 2
+        val cardBottomPad = when {
+            sidePane && showAddrBelow -> 72f * scale
+            sidePane -> 56f * scale
+            showAddrBelow && settings.compactUi -> 140f * scale
+            showAddrBelow -> 160f * scale
+            else -> 100f * scale
+        }
+        val pad = 24f * scale
+        var cardY = (h - cardH - cardBottomPad).coerceAtLeast(pad)
+        var cardX = when (pos) {
+            2 -> pad
+            3 -> w - cardW - pad
+            else -> (w - cardW) / 2f
+        }
+
+        if (dragFracX != 0f || dragFracY != 0f) {
+            val maxX = (w - cardW - pad).coerceAtLeast(pad)
+            val maxY = (h - cardH - pad).coerceAtLeast(pad)
+            cardX = (cardX + dragFracX * w).coerceIn(pad, maxX)
+            cardY = (cardY + dragFracY * h).coerceIn(pad, maxY)
+        }
+        return MapCardLayout(cardW, cardH, cardX, cardY, sidePane)
+    }
+
     private fun compositeOverlays(
         bitmap: Bitmap,
         loc: LocationUi?,
         settings: SettingsState,
-        mapBitmap: Bitmap? = null
+        mapBitmap: Bitmap? = null,
+        dragFractionX: Float = 0f,
+        dragFractionY: Float = 0f
     ) {
         val canvas = Canvas(bitmap)
         val w = bitmap.width.toFloat()
@@ -280,16 +354,12 @@ object MediaUtils {
         }
 
         if (settings.showMap && loc?.latitude != null && mapBitmap != null) {
-            val cardW = (if (settings.compactUi) 0.3f else 0.38f) * w
-            val cardH = cardW * (mapBitmap.height.toFloat() / mapBitmap.width.toFloat())
-            val cardX = (w - cardW) / 2f
-            val showAddrBelow = settings.showAddress && settings.addressPositionIndex == 2
-            val cardBottomPad = when {
-                showAddrBelow && settings.compactUi -> 140f * densityScale
-                showAddrBelow -> 160f * densityScale
-                else -> 100f * densityScale
-            }
-            val cardY = h - cardH - cardBottomPad
+            val isLandscape = w > h
+            val layout = computeMapCardLayout(w, h, densityScale, settings, mapBitmap, isLandscape, dragFractionX, dragFractionY)
+            val cardW = layout.cardW
+            val cardH = layout.cardH
+            val cardX = layout.cardX
+            val cardY = layout.cardY
 
             val borderPaint = Paint().apply {
                 color = android.graphics.Color.WHITE
@@ -307,18 +377,20 @@ object MediaUtils {
             canvas.restore()
 
             val addr = loc?.address ?: "\u2014"
+            val textCx = cardX + cardW / 2f
+
             if (settings.showAddress && settings.addressPositionIndex == 0) {
                 canvas.drawRoundRect(RectF(cardX, cardY, cardX + cardW, cardY + 30f * densityScale), 12f * densityScale, 12f * densityScale, bgPaint)
                 textPaint.textSize = 22f * densityScale
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(addr, w / 2f, cardY + 22f * densityScale, textPaint)
+                canvas.drawText(addr, textCx, cardY + 22f * densityScale, textPaint)
             }
             if (settings.showAddress && settings.addressPositionIndex == 1) {
                 val addrY = cardY + cardH - 30f * densityScale
                 canvas.drawRoundRect(RectF(cardX, addrY, cardX + cardW, cardY + cardH), 12f * densityScale, 12f * densityScale, bgPaint)
                 textPaint.textSize = 22f * densityScale
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(addr, w / 2f, cardY + cardH - 8f * densityScale, textPaint)
+                canvas.drawText(addr, textCx, cardY + cardH - 8f * densityScale, textPaint)
             }
             if (settings.showCoordinates) {
                 val coord = formatLatLon(loc.latitude, loc.longitude)
@@ -326,18 +398,23 @@ object MediaUtils {
                 canvas.drawRoundRect(RectF(cardX, coordY, cardX + cardW, cardY + cardH), 12f * densityScale, 12f * densityScale, bgPaint)
                 textPaint.textSize = 22f * densityScale
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(coord, w / 2f, cardY + cardH - 6f * densityScale, textPaint)
+                canvas.drawText(coord, textCx, cardY + cardH - 6f * densityScale, textPaint)
             }
 
             if (settings.showAddress && settings.addressPositionIndex == 2) {
-                val addrY = h - (if (settings.compactUi) 100f * densityScale else 110f * densityScale)
                 val addrH = 30f * densityScale
-                canvas.drawRoundRect(RectF(pad * 2, addrY - addrH, w - pad * 2, addrY), 8f * densityScale, 8f * densityScale, bgPaint)
+                val addrTop = cardY + cardH + 6f * densityScale
+                // Under the card (side-aware), not full-bleed center
+                canvas.drawRoundRect(RectF(cardX, addrTop, cardX + cardW, addrTop + addrH), 8f * densityScale, 8f * densityScale, bgPaint)
                 textPaint.textSize = 22f * densityScale
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(addr, w / 2f, addrY - 6f * densityScale, textPaint)
+                canvas.drawText(addr, textCx, addrTop + addrH - 8f * densityScale, textPaint)
             }
-            bottomY = cardY - pad
+
+            // Only push bottomY when map is center (chips stay clear of side map)
+            if (!layout.sidePane) {
+                bottomY = cardY - pad
+            }
         }
 
         textPaint.textSize = 34f * densityScale
@@ -468,6 +545,8 @@ object MediaUtils {
         locationSamples: List<LocationSample>,
         mapSamples: List<MapSample>,
         settings: SettingsState,
+        dragFractionX: Float = 0f,
+        dragFractionY: Float = 0f,
         recordingStartEpochMs: Long,
         onComplete: (Uri) -> Unit,
         onError: (String) -> Unit
@@ -509,6 +588,8 @@ object MediaUtils {
                                 loc = loc,
                                 settings = settings,
                                 mapBitmap = mapBmp,
+                                dragFractionX = dragFractionX,
+                                dragFractionY = dragFractionY,
                                 presentationTimeUs = presentationTimeUs,
                                 recordingStartEpochMs = recordingStartEpochMs
                             )
@@ -569,6 +650,8 @@ object MediaUtils {
         loc: LocationUi?,
         settings: SettingsState,
         mapBitmap: Bitmap? = null,
+        dragFractionX: Float = 0f,
+        dragFractionY: Float = 0f,
         presentationTimeUs: Long = 0L,
         recordingStartEpochMs: Long = System.currentTimeMillis()
     ) {
@@ -642,16 +725,12 @@ object MediaUtils {
         }
 
         if (settings.showMap && loc?.latitude != null && mapBitmap != null) {
-            val cardW = (if (settings.compactUi) 0.3f else 0.38f) * w
-            val cardH = cardW * (mapBitmap.height.toFloat() / mapBitmap.width.toFloat())
-            val cardX = (w - cardW) / 2f
-            val showAddrBelow = settings.showAddress && settings.addressPositionIndex == 2
-            val cardBottomPad = when {
-                showAddrBelow && settings.compactUi -> 140f * scale
-                showAddrBelow -> 160f * scale
-                else -> 100f * scale
-            }
-            val cardY = h - cardH - cardBottomPad
+            val isLandscape = w > h
+            val layout = computeMapCardLayout(w, h, scale, settings, mapBitmap, isLandscape, dragFractionX, dragFractionY)
+            val cardW = layout.cardW
+            val cardH = layout.cardH
+            val cardX = layout.cardX
+            val cardY = layout.cardY
             val mapCardRect = RectF(cardX, cardY, cardX + cardW, cardY + cardH)
             val borderPaint = Paint().apply {
                 color = android.graphics.Color.WHITE
@@ -668,31 +747,40 @@ object MediaUtils {
             canvas.restore()
 
             val addr = loc?.address ?: "\u2014"
+            val textCx = cardX + cardW / 2f
+
             if (settings.showAddress && settings.addressPositionIndex == 0) {
                 textPaint.textSize = 22f * scale
                 textPaint.textAlign = Paint.Align.CENTER
                 canvas.drawRoundRect(RectF(cardX, cardY, cardX + cardW, cardY + 30f * scale), 12f * scale, 12f * scale, bgPaint)
-                canvas.drawText(addr, w / 2f, cardY + 22f * scale, textPaint)
+                canvas.drawText(addr, textCx, cardY + 22f * scale, textPaint)
             }
             if (settings.showAddress && settings.addressPositionIndex == 1) {
                 textPaint.textSize = 22f * scale
                 textPaint.textAlign = Paint.Align.CENTER
                 canvas.drawRoundRect(RectF(cardX, cardY + cardH - 30f * scale, cardX + cardW, cardY + cardH), 12f * scale, 12f * scale, bgPaint)
-                canvas.drawText(addr, w / 2f, cardY + cardH - 8f * scale, textPaint)
+                canvas.drawText(addr, textCx, cardY + cardH - 8f * scale, textPaint)
             }
             if (settings.showCoordinates) {
                 textPaint.textSize = 22f * scale
                 textPaint.textAlign = Paint.Align.CENTER
                 canvas.drawRoundRect(RectF(cardX, cardY + cardH - 26f * scale, cardX + cardW, cardY + cardH), 12f * scale, 12f * scale, bgPaint)
-                canvas.drawText(formatLatLon(loc.latitude, loc.longitude), w / 2f, cardY + cardH - 6f * scale, textPaint)
+                canvas.drawText(formatLatLon(loc.latitude, loc.longitude), textCx, cardY + cardH - 6f * scale, textPaint)
             }
             if (settings.showAddress && settings.addressPositionIndex == 2) {
+                val addrH = 30f * scale
+                val addrTop = cardY + cardH + 6f * scale
+                // Under the card (side-aware), not full-bleed center
                 textPaint.textSize = 22f * scale
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(RectF(pad * 2, bottomY - 60f * scale, w - pad * 2, bottomY - 30f * scale), 8f * scale, 8f * scale, bgPaint)
-                canvas.drawText(addr, w / 2f, bottomY - 36f * scale, textPaint)
+                canvas.drawRoundRect(RectF(cardX, addrTop, cardX + cardW, addrTop + addrH), 8f * scale, 8f * scale, bgPaint)
+                canvas.drawText(addr, textCx, addrTop + addrH - 8f * scale, textPaint)
             }
-            bottomY = cardY - pad
+
+            // Only push bottomY when map is center (chips stay clear of side map)
+            if (!layout.sidePane) {
+                bottomY = cardY - pad
+            }
         }
 
         if (settings.showCoordinates || (settings.showAddress && !settings.showMap)) {

@@ -42,6 +42,11 @@
     <string name="address_inside_top">Inside (top)</string>
     <string name="address_inside_bottom">Inside (bottom)</string>
     <string name="address_below_map">Below map</string>
+    <string name="map_position">Map position</string>
+    <string name="map_position_auto">Auto (side pane in landscape)</string>
+    <string name="map_position_bottom_center">Bottom center</string>
+    <string name="map_position_bottom_left">Bottom left</string>
+    <string name="map_position_bottom_right">Bottom right</string>
     <string name="camera_facing">Camera</string>
     <string name="camera_back">Back camera</string>
     <string name="camera_front">Front camera</string>

@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.provider.MediaStore
 import android.os.Build
@@ -36,6 +37,7 @@ import androidx.camera.viewfinder.core.ImplementationMode
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,8 +47,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
@@ -68,16 +73,21 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -104,8 +114,11 @@ import org.app.geotagvideocamera.map.resolveStyleUrl
 import org.app.geotagvideocamera.qr.QrCodeGenerator
 import org.app.geotagvideocamera.settings.SettingsState
 import org.app.geotagvideocamera.settings.SettingsViewModel
+import org.app.geotagvideocamera.settings.effectiveMapPosition
+import org.app.geotagvideocamera.settings.isSideMapPlacement
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 
 @Composable
 fun CameraAndOverlayScreen(
@@ -182,6 +195,21 @@ fun CameraAndOverlayScreen(
     }
 
     val locationUi by tracker.state.collectAsStateWithLifecycle()
+
+    // Orientation + session drag offset of the map card (shared with capture engines)
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var mapDragOffset by remember { mutableStateOf(Offset.Zero) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(settings.mapPositionIndex, isLandscape) {
+        mapDragOffset = Offset.Zero
+    }
+    val dragFraction = if (containerSize.width > 0 && containerSize.height > 0) {
+        Offset(
+            x = (mapDragOffset.x / containerSize.width).coerceIn(-1f, 1f),
+            y = (mapDragOffset.y / containerSize.height).coerceIn(-1f, 1f)
+        )
+    } else Offset.Zero
 
     // UI states
     var mode by remember { mutableStateOf(CameraMode.PHOTO) }
@@ -319,6 +347,7 @@ fun CameraAndOverlayScreen(
     Box(
         Modifier
             .fillMaxSize()
+            .onSizeChanged { containerSize = it }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = { onOpenSettings() }
@@ -347,7 +376,9 @@ fun CameraAndOverlayScreen(
         if (settings.showMap) {
             MapCard(
                 settings = settings,
-                loc = locationUi
+                loc = locationUi,
+                dragOffset = mapDragOffset,
+                onDragDelta = { mapDragOffset += it }
             )
         } else if (settings.showLocationTextWithoutMap) {
             StandaloneLocationOverlay(
@@ -392,6 +423,8 @@ fun CameraAndOverlayScreen(
                                     location = loc,
                                     locationUi = locationUi,
                                     settings = settings,
+                                    dragFractionX = dragFraction.x,
+                                    dragFractionY = dragFraction.y,
                                     onPhotoSaved = { uri ->
                                         Toast.makeText(context, "Photo saved (overlay)", Toast.LENGTH_SHORT).show()
                                     },
@@ -465,6 +498,8 @@ fun CameraAndOverlayScreen(
                                                                 locationSamples = recordingLocationSamples.toList(),
                                                                 mapSamples = recordingMapSamples.toList(),
                                                                 settings = settings,
+                                                                dragFractionX = dragFraction.x,
+                                                                dragFractionY = dragFraction.y,
                                                                 recordingStartEpochMs = recordingStartEpochMs,
                                                                 onComplete = { uri ->
                                                                     Toast.makeText(context, "Recording saved (with overlay)", Toast.LENGTH_SHORT).show()
@@ -696,96 +731,142 @@ private fun TopStatusBar(
 @Composable
 private fun BoxScope.MapCard(
     settings: SettingsState,
-    loc: LocationUi?
+    loc: LocationUi?,
+    dragOffset: Offset,
+    onDragDelta: (Offset) -> Unit
 ) {
-    val cardWidth = if (settings.compactUi) 200.dp else 240.dp
-    val cardHeight = if (settings.compactUi) 220.dp else 280.dp
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val effectivePos = settings.effectiveMapPosition(isLandscape)
+    val sidePane = settings.isSideMapPlacement(isLandscape)
 
-    // Inc. bottom padding for map card based on whether address is below
+    // Smaller card in landscape / side pane so the subject stays visible
+    val cardWidth = when {
+        sidePane && settings.compactUi -> 150.dp
+        sidePane -> 170.dp
+        settings.compactUi -> 200.dp
+        else -> 240.dp
+    }
+    val cardHeight = when {
+        sidePane && settings.compactUi -> 150.dp
+        sidePane -> 170.dp
+        settings.compactUi -> 220.dp
+        else -> 280.dp
+    }
+
     val showAddressBelow = settings.showAddress && settings.addressPositionIndex == 2
+
     val mapBottomPadding = when {
+        sidePane && showAddressBelow -> if (settings.compactUi) 72.dp else 84.dp
+        sidePane -> if (settings.compactUi) 56.dp else 64.dp
         showAddressBelow && settings.compactUi -> 140.dp
         showAddressBelow -> 160.dp
         else -> 100.dp
+    }
+
+    val horizontalPad = 12.dp
+    val alignment = when (effectivePos) {
+        2 -> Alignment.BottomStart
+        3 -> Alignment.BottomEnd
+        else -> Alignment.BottomCenter
     }
 
     val address = loc?.address ?: "—"
     val showAddress = settings.showAddress
     val addrPos = settings.addressPositionIndex
 
-    Box(
+    Column(
         modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(bottom = mapBottomPadding)
-            .size(cardWidth, cardHeight)
-            .clip(RoundedCornerShape(12.dp))
-            .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+            .align(alignment)
+            .padding(
+                bottom = mapBottomPadding,
+                start = if (effectivePos == 2 || effectivePos == 1) horizontalPad else 0.dp,
+                end = if (effectivePos == 3 || effectivePos == 1) horizontalPad else 0.dp
+            )
+            .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) },
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        MapOverlay(
-            settings = settings,
-            lat = loc?.latitude,
-            lon = loc?.longitude,
-            modifier = Modifier.fillMaxSize()
-        )
+        Box(
+            modifier = Modifier
+                .size(cardWidth, cardHeight)
+                .clip(RoundedCornerShape(12.dp))
+                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+        ) {
+            MapOverlay(
+                settings = settings,
+                lat = loc?.latitude,
+                lon = loc?.longitude,
+                modifier = Modifier.fillMaxSize()
+            )
 
-        if (showAddress && addrPos in 0..1) {
-            val alignment = if (addrPos == 0) Alignment.TopCenter else Alignment.BottomCenter
+            if (showAddress && addrPos in 0..1) {
+                val aAlign = if (addrPos == 0) Alignment.TopCenter else Alignment.BottomCenter
+                Surface(
+                    color = Color.Black.copy(alpha = 0.7f),
+                    tonalElevation = 0.dp,
+                    modifier = Modifier
+                        .align(aAlign)
+                        .fillMaxWidth()
+                ) {
+                    Text(
+                        text = address,
+                        color = Color.White,
+                        fontSize = if (settings.compactUi) 9.sp else 10.sp,
+                        modifier = Modifier.padding(6.dp),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (settings.showCoordinates) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.7f),
+                    tonalElevation = 0.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                ) {
+                    val coordText = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "—"
+                    Text(
+                        text = coordText,
+                        color = Color.White,
+                        fontSize = if (settings.compactUi) 9.sp else 10.sp,
+                        modifier = Modifier.padding(6.dp),
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDragDelta(dragAmount)
+                        }
+                    }
+            )
+        }
+
+        if (showAddressBelow) {
+            Spacer(Modifier.height(6.dp))
             Surface(
                 color = Color.Black.copy(alpha = 0.7f),
                 tonalElevation = 0.dp,
-                modifier = Modifier
-                    .align(alignment)
-                    .fillMaxWidth()
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.widthIn(max = cardWidth + 24.dp)
             ) {
                 Text(
                     text = address,
                     color = Color.White,
                     fontSize = if (settings.compactUi) 9.sp else 10.sp,
-                    modifier = Modifier.padding(6.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-        }
-
-        if (settings.showCoordinates) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.7f),
-                tonalElevation = 0.dp,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-            ) {
-                val coordText = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "—"
-                Text(
-                    text = coordText,
-                    color = Color.White,
-                    fontSize = if (settings.compactUi) 9.sp else 10.sp,
-                    modifier = Modifier.padding(6.dp),
-                    maxLines = 1
-                )
-            }
-        }
-    }
-
-    if (showAddress && addrPos == 2) {
-        val addressBottomPadding = if (settings.compactUi) 100.dp else 110.dp
-        Surface(
-            color = Color.Black.copy(alpha = 0.7f),
-            tonalElevation = 0.dp,
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = addressBottomPadding, start = 16.dp, end = 16.dp)
-        ) {
-            Text(
-                text = address,
-                color = Color.White,
-                fontSize = if (settings.compactUi) 9.sp else 10.sp,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }

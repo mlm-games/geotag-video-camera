@@ -34,6 +34,7 @@ class SettingsRepository(private val context: Context) {
                 mapZoom = p[floatPreferencesKey("mapZoom")] ?: 15f,
                 showTopBar = p[booleanPreferencesKey("showTopBar")] ?: false,
                 addressPositionIndex = p[intPreferencesKey("addressPositionIndex")] ?: 2,
+                mapPositionIndex = p[intPreferencesKey("mapPositionIndex")] ?: 0,
                 showLocationTextWithoutMap = p[booleanPreferencesKey("showLocationTextWithoutMap")] ?: true,
 
                 // Map
