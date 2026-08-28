@@ -38,6 +38,10 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.text.TextUtils
 import org.app.geotagvideocamera.location.LocationUi
 import org.app.geotagvideocamera.location.formatLatLon
 import org.app.geotagvideocamera.location.formatSpeed
@@ -191,14 +195,29 @@ object MediaUtils {
                             if (mutable != bmp) bmp.recycle()
 
                             val mapBmp = if (settings.showMap && locationUi?.latitude != null) {
+                                val isLand = mutable.width > mutable.height
+                                val cardDpW = when {
+                                    (settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3) && settings.compactUi -> 150f
+                                    settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3 -> 170f
+                                    settings.compactUi -> 200f
+                                    else -> 240f
+                                }
+                                val cardDpH = when {
+                                    (settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3) && settings.compactUi -> 150f
+                                    settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3 -> 170f
+                                    settings.compactUi -> 220f
+                                    else -> 280f
+                                }
+                                val snapW = dpToPx(cardDpW, mutable.width.toFloat()).toInt().coerceIn(200, 2000)
+                                val snapH = dpToPx(cardDpH, mutable.width.toFloat()).toInt().coerceIn(200, 2400)
                                 captureMapSnapshot(
                                     context = context,
                                     lat = locationUi.latitude,
                                     lon = locationUi.longitude,
                                     zoom = settings.mapZoom,
                                     styleUrl = resolveStyleUrl(settings, context),
-                                    targetWidth = (mutable.width * 0.38f).toInt().coerceIn(200, 1200),
-                                    targetHeight = (mutable.width * 0.44f).toInt().coerceIn(240, 1400)
+                                    targetWidth = snapW,
+                                    targetHeight = snapH
                                 )
                             } else null
 
@@ -243,6 +262,110 @@ object MediaUtils {
         val sidePane: Boolean
     )
 
+    private const val ADDRESS_MAX_LINES = 3
+    private const val REF_WIDTH_DP = 360f
+    private fun dpToPx(dp: Float, w: Float): Float = dp * w / REF_WIDTH_DP
+    private fun spToPx(sp: Float, w: Float): Float = sp * w / REF_WIDTH_DP
+    private fun mapAddressSp(settings: SettingsState) = if (settings.compactUi) 9f else 10f
+    private fun chipSp(settings: SettingsState) = if (settings.compactUi) 12f else 14f
+
+    private data class BoundedTextBlock(
+        val layout: StaticLayout,
+        val textWidthPx: Int,
+        val height: Float
+    )
+
+    private fun estimatedCapturedAddressBlockHeight(scale: Float): Float {
+        return 90f * scale
+    }
+
+    private fun buildBoundedTextBlock(
+        text: String,
+        basePaint: Paint,
+        outerWidth: Float,
+        hPad: Float,
+        vPad: Float,
+        maxLines: Int = ADDRESS_MAX_LINES
+    ): BoundedTextBlock {
+        val textWidthPx = (outerWidth - 2f * hPad).toInt().coerceAtLeast(1)
+        val textPaint = TextPaint(basePaint).apply {
+            textAlign = Paint.Align.LEFT
+        }
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, textPaint, textWidthPx)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setMaxLines(maxLines)
+            .setEllipsize(TextUtils.TruncateAt.END)
+            .setEllipsizedWidth(textWidthPx)
+            .setIncludePad(false)
+            .setLineSpacing(0f, 1.05f)
+            .build()
+        return BoundedTextBlock(
+            layout = layout,
+            textWidthPx = textWidthPx,
+            height = layout.height.toFloat() + 2f * vPad
+        )
+    }
+
+    private fun drawBoundedTextBlock(
+        canvas: Canvas,
+        block: BoundedTextBlock,
+        left: Float,
+        top: Float,
+        outerWidth: Float,
+        hPad: Float,
+        vPad: Float,
+        bgPaint: Paint,
+        cornerRadius: Float
+    ): Float {
+        val rect = RectF(left, top, left + outerWidth, top + block.height)
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, bgPaint)
+        canvas.save()
+        canvas.clipRect(rect)
+        canvas.translate(left + hPad, top + vPad)
+        block.layout.draw(canvas)
+        canvas.restore()
+        return block.height
+    }
+
+    private fun drawBoundedAddressBlock(
+        canvas: Canvas,
+        address: String,
+        textPaint: Paint,
+        left: Float,
+        top: Float,
+        outerWidth: Float,
+        scale: Float,
+        w: Float,
+        settings: SettingsState,
+        bgPaint: Paint,
+        cornerRadius: Float,
+        maxLines: Int = ADDRESS_MAX_LINES
+    ): Float {
+        textPaint.textSize = spToPx(mapAddressSp(settings), w)
+        val hPad = 8f * scale
+        val vPad = 6f * scale
+        val block = buildBoundedTextBlock(
+            text = address,
+            basePaint = textPaint,
+            outerWidth = outerWidth,
+            hPad = hPad,
+            vPad = vPad,
+            maxLines = maxLines
+        )
+        return drawBoundedTextBlock(
+            canvas = canvas,
+            block = block,
+            left = left,
+            top = top,
+            outerWidth = outerWidth,
+            hPad = hPad,
+            vPad = vPad,
+            bgPaint = bgPaint,
+            cornerRadius = cornerRadius
+        )
+    }
+
     private fun computeMapCardLayout(
         w: Float,
         h: Float,
@@ -257,29 +380,46 @@ object MediaUtils {
         val sidePane = pos == 2 || pos == 3
         val aspect = mapBitmap.height.toFloat() / mapBitmap.width.toFloat()
 
-        // Side pane / landscape frames size from the shorter edge so the subject stays clear
-        val sideSized = sidePane || isLandscape
-        var cardW = minOf(w, h) * when {
-            sideSized && settings.compactUi -> 0.28f
-            sideSized -> 0.32f
+        val cardDpW = when {
+            sidePane && settings.compactUi -> 150f
+            sidePane -> 170f
+            settings.compactUi -> 200f
+            else -> 240f
+        }
+        var cardW = dpToPx(cardDpW, w)
+        val minCardW = minOf(w, h) * when {
+            sidePane && settings.compactUi -> 0.28f
+            sidePane -> 0.32f
             settings.compactUi -> 0.30f
             else -> 0.38f
         }
+        cardW = maxOf(cardW, minCardW)
+        cardW = cardW.coerceAtMost(w - 2f * 24f * scale)
         var cardH = cardW * aspect
-        val maxH = h * (if (sideSized) 0.55f else 0.75f)
+        val maxH = h * (if (sidePane || isLandscape) 0.55f else 0.75f)
         if (cardH > maxH) {
             cardH = maxH
             cardW = cardH / aspect
         }
 
         val showAddrBelow = settings.showAddress && settings.addressPositionIndex == 2
-        val cardBottomPad = when {
-            sidePane && showAddrBelow -> 72f * scale
+
+        val belowAddressReserve = if (showAddrBelow) {
+            6f * scale + estimatedCapturedAddressBlockHeight(scale) + 24f * scale
+        } else {
+            24f * scale
+        }
+
+        val baseBottomPad = when {
+            sidePane && showAddrBelow -> 84f * scale
             sidePane -> 56f * scale
             showAddrBelow && settings.compactUi -> 140f * scale
             showAddrBelow -> 160f * scale
             else -> 100f * scale
         }
+
+        val cardBottomPad = maxOf(baseBottomPad, belowAddressReserve)
+
         val pad = 24f * scale
         var cardY = (h - cardH - cardBottomPad).coerceAtLeast(pad)
         var cardX = when (pos) {
@@ -290,7 +430,7 @@ object MediaUtils {
 
         if (dragFracX != 0f || dragFracY != 0f) {
             val maxX = (w - cardW - pad).coerceAtLeast(pad)
-            val maxY = (h - cardH - pad).coerceAtLeast(pad)
+            val maxY = (h - cardH - belowAddressReserve).coerceAtLeast(pad)
             cardX = (cardX + dragFracX * w).coerceIn(pad, maxX)
             cardY = (cardY + dragFracY * h).coerceIn(pad, maxY)
         }
@@ -328,9 +468,14 @@ object MediaUtils {
             val date = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(System.currentTimeMillis())
             val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(System.currentTimeMillis())
             val acc = loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS"
-            textPaint.textSize = 30f * densityScale
+            val dateSp = if (settings.compactUi) 10f else 12f
+            val timeSp = if (settings.compactUi) 12f else 14f
+            val accSp = if (settings.compactUi) 10f else 12f
+            textPaint.textSize = spToPx(dateSp, w)
             canvas.drawText(date, pad, pad + textPaint.textSize, textPaint)
-            canvas.drawText(time, pad, pad + textPaint.textSize * 2.3f, textPaint)
+            textPaint.textSize = spToPx(timeSp, w)
+            canvas.drawText(time, pad, pad + textPaint.textSize * 1.5f + spToPx(dateSp, w), textPaint)
+            textPaint.textSize = spToPx(accSp, w)
             val accW = textPaint.measureText(acc)
             canvas.drawText(acc, w - pad - accW, pad + textPaint.textSize * 1.5f, textPaint)
         }
@@ -380,44 +525,91 @@ object MediaUtils {
             val textCx = cardX + cardW / 2f
 
             if (settings.showAddress && settings.addressPositionIndex == 0) {
-                canvas.drawRoundRect(RectF(cardX, cardY, cardX + cardW, cardY + 30f * densityScale), 12f * densityScale, 12f * densityScale, bgPaint)
-                textPaint.textSize = 22f * densityScale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(addr, textCx, cardY + 22f * densityScale, textPaint)
+                drawBoundedAddressBlock(
+                    canvas = canvas,
+                    address = addr,
+                    textPaint = textPaint,
+                    left = cardX,
+                    top = cardY,
+                    outerWidth = cardW,
+                    scale = densityScale,
+                    w = w,
+                    settings = settings,
+                    bgPaint = bgPaint,
+                    cornerRadius = 12f * densityScale
+                )
             }
+
+            val coordStripH = 26f * densityScale
+            val coordTop = cardY + cardH - coordStripH
+            val bottomAddressLimit = if (settings.showCoordinates) coordTop else cardY + cardH
+
             if (settings.showAddress && settings.addressPositionIndex == 1) {
-                val addrY = cardY + cardH - 30f * densityScale
-                canvas.drawRoundRect(RectF(cardX, addrY, cardX + cardW, cardY + cardH), 12f * densityScale, 12f * densityScale, bgPaint)
-                textPaint.textSize = 22f * densityScale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(addr, textCx, cardY + cardH - 8f * densityScale, textPaint)
+                val hPad = 8f * densityScale
+                val vPad = 6f * densityScale
+                textPaint.textSize = spToPx(mapAddressSp(settings), w)
+                val block = buildBoundedTextBlock(
+                    text = addr,
+                    basePaint = textPaint,
+                    outerWidth = cardW,
+                    hPad = hPad,
+                    vPad = vPad,
+                    maxLines = ADDRESS_MAX_LINES
+                )
+                val addrTop = (bottomAddressLimit - block.height).coerceAtLeast(cardY)
+                drawBoundedTextBlock(
+                    canvas = canvas,
+                    block = block,
+                    left = cardX,
+                    top = addrTop,
+                    outerWidth = cardW,
+                    hPad = hPad,
+                    vPad = vPad,
+                    bgPaint = bgPaint,
+                    cornerRadius = 12f * densityScale
+                )
             }
+
             if (settings.showCoordinates) {
                 val coord = formatLatLon(loc.latitude, loc.longitude)
-                val coordY = cardY + cardH - 26f * densityScale
-                canvas.drawRoundRect(RectF(cardX, coordY, cardX + cardW, cardY + cardH), 12f * densityScale, 12f * densityScale, bgPaint)
-                textPaint.textSize = 22f * densityScale
+                textPaint.textSize = spToPx(mapAddressSp(settings), w)
                 textPaint.textAlign = Paint.Align.CENTER
+                canvas.drawRoundRect(
+                    RectF(cardX, coordTop, cardX + cardW, cardY + cardH),
+                    12f * densityScale,
+                    12f * densityScale,
+                    bgPaint
+                )
+                val coordTextWidth = textPaint.measureText(coord)
                 canvas.drawText(coord, textCx, cardY + cardH - 6f * densityScale, textPaint)
             }
 
             if (settings.showAddress && settings.addressPositionIndex == 2) {
-                val addrH = 30f * densityScale
                 val addrTop = cardY + cardH + 6f * densityScale
-                // Under the card (side-aware), not full-bleed center
-                canvas.drawRoundRect(RectF(cardX, addrTop, cardX + cardW, addrTop + addrH), 8f * densityScale, 8f * densityScale, bgPaint)
-                textPaint.textSize = 22f * densityScale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(addr, textCx, addrTop + addrH - 8f * densityScale, textPaint)
+                val pillW = minOf(cardW + 24f * densityScale, w - 2f * pad).coerceAtLeast(1f)
+                val maxLeft = (w - pad - pillW).coerceAtLeast(pad)
+                val pillLeft = (textCx - pillW / 2f).coerceIn(pad, maxLeft)
+                drawBoundedAddressBlock(
+                    canvas = canvas,
+                    address = addr,
+                    textPaint = textPaint,
+                    left = pillLeft,
+                    top = addrTop,
+                    outerWidth = pillW,
+                    scale = densityScale,
+                    w = w,
+                    settings = settings,
+                    bgPaint = bgPaint,
+                    cornerRadius = 8f * densityScale
+                )
             }
 
-            // Only push bottomY when map is center (chips stay clear of side map)
             if (!layout.sidePane) {
                 bottomY = cardY - pad
             }
         }
 
-        textPaint.textSize = 34f * densityScale
+        textPaint.textSize = spToPx(chipSp(settings), w)
         textPaint.textAlign = Paint.Align.CENTER
 
         if (settings.showSpeed || settings.showGpsStatus) {
@@ -425,10 +617,10 @@ object MediaUtils {
                 if (settings.showSpeed) add(loc?.let { formatSpeed(it.speedMps ?: 0f, settings.unitsIndex) } ?: "\u2014")
                 if (settings.showGpsStatus) add(loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS")
             }
-            val chipH = 50f * densityScale
+            val chipH = dpToPx(if (settings.compactUi) 26f else 30f, w)
             var chipX = w / 2f - (chips.size * 140f * densityScale) / 2f
             for (chip in chips) {
-                val cw = textPaint.measureText(chip) + 30f * densityScale
+                val cw = textPaint.measureText(chip) + dpToPx(16f, w)
                 canvas.drawRoundRect(
                     RectF(chipX, bottomY - chipH, chipX + cw, bottomY),
                     8f * densityScale, 8f * densityScale, bgPaint
@@ -439,25 +631,28 @@ object MediaUtils {
             bottomY -= chipH + pad
         }
 
-        if (settings.showCoordinates || (settings.showAddress && !settings.showMap)) {
+        if (!settings.showMap && settings.showLocationTextWithoutMap && (settings.showCoordinates || settings.showAddress)) {
             val coord = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "\u2014"
             val addr = loc?.address ?: "\u2014"
             val addrLines = addr.chunked(40)
-            val lineH = 32f * densityScale
-            val blockH = (if (settings.showCoordinates) lineH else 0f) + (if (settings.showAddress && !settings.showMap) addrLines.size * lineH else 0f) + 20f * densityScale
+            val standaloneSp = if (settings.compactUi) 11f else 13f
+            val lineH = spToPx(standaloneSp, w) * 1.35f
+            // Respect individual toggles for block height, matching StandaloneLocationOverlay
+            val showCoords = settings.showCoordinates
+            val showAddr = settings.showAddress
+            val blockH = (if (showCoords) lineH else 0f) + (if (showAddr) addrLines.size * lineH else 0f) + 20f * densityScale
             if (blockH > 0f) {
                 canvas.drawRoundRect(
                     RectF(pad * 2, bottomY - blockH, w - pad * 2, bottomY),
                     12f * densityScale, 12f * densityScale, bgPaint
                 )
-                textPaint.textSize = 30f * densityScale
-                var yOff = bottomY - blockH + lineH * 1.2f
-                if (settings.showCoordinates) {
+                textPaint.textSize = spToPx(standaloneSp, w)
+                var yOff = bottomY - blockH + lineH * 1.05f
+                if (showCoords) {
                     canvas.drawText(coord, w / 2f, yOff, textPaint)
                     yOff += lineH
                 }
-                if (settings.showAddress && !settings.showMap) {
-                    textPaint.textSize = 28f * densityScale
+                if (showAddr) {
                     for (line in addrLines) {
                         canvas.drawText(line, w / 2f, yOff, textPaint)
                         yOff += lineH
@@ -564,14 +759,17 @@ object MediaUtils {
 
                 val fallbackMap = if (mapSamples.isEmpty() && settings.showMap) {
                     locationSamples.lastOrNull()?.location?.let { loc ->
+                        // Fallback uses preview card size at 1080p reference so zoom matches preview
+                        val snapW = 720
+                        val snapH = 840
                         captureMapSnapshot(
                             context = context,
                             lat = loc.latitude,
                             lon = loc.longitude,
                             zoom = settings.mapZoom,
                             styleUrl = resolveStyleUrl(settings, context),
-                            targetWidth = 400,
-                            targetHeight = 480
+                            targetWidth = snapW,
+                            targetHeight = snapH
                         )
                     }
                 } else null
@@ -676,11 +874,17 @@ object MediaUtils {
             val date = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(videoTimeMs)
             val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(videoTimeMs)
             val acc = loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS"
-            textPaint.textSize = 30f * scale
+            val dateSp = if (settings.compactUi) 10f else 12f
+            val timeSp = if (settings.compactUi) 12f else 14f
+            val accSp = if (settings.compactUi) 10f else 12f
+            textPaint.textSize = spToPx(dateSp, w)
             canvas.drawText(time, pad, pad + textPaint.textSize, textPaint)
+            textPaint.textSize = spToPx(dateSp, w)
             canvas.drawText(date, pad, pad + textPaint.textSize * 2.3f, textPaint)
+            textPaint.textSize = spToPx(accSp, w)
             val accW = textPaint.measureText(acc)
             canvas.drawText(acc, w - pad - accW, pad + textPaint.textSize * 1.5f, textPaint)
+            textPaint.textSize = spToPx(timeSp, w)
         }
 
         if (settings.showQrCode && loc?.latitude != null && loc.longitude != null) {
@@ -701,7 +905,7 @@ object MediaUtils {
             }
         }
 
-        textPaint.textSize = 34f * scale
+        textPaint.textSize = spToPx(chipSp(settings), w)
         textPaint.textAlign = Paint.Align.CENTER
         var bottomY = h - pad
 
@@ -710,10 +914,10 @@ object MediaUtils {
                 if (settings.showSpeed) add(loc?.let { formatSpeed(it.speedMps ?: 0f, settings.unitsIndex) } ?: "\u2014")
                 if (settings.showGpsStatus) add(loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS")
             }
-            val chipH = 50f * scale
+            val chipH = dpToPx(if (settings.compactUi) 26f else 30f, w)
             var chipX = w / 2f - (chips.size * 140f * scale) / 2f
             for (chip in chips) {
-                val cw = textPaint.measureText(chip) + 30f * scale
+                val cw = textPaint.measureText(chip) + dpToPx(16f, w)
                 canvas.drawRoundRect(
                     RectF(chipX, bottomY - chipH, chipX + cw, bottomY),
                     8f * scale, 8f * scale, bgPaint
@@ -750,58 +954,109 @@ object MediaUtils {
             val textCx = cardX + cardW / 2f
 
             if (settings.showAddress && settings.addressPositionIndex == 0) {
-                textPaint.textSize = 22f * scale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(RectF(cardX, cardY, cardX + cardW, cardY + 30f * scale), 12f * scale, 12f * scale, bgPaint)
-                canvas.drawText(addr, textCx, cardY + 22f * scale, textPaint)
-            }
-            if (settings.showAddress && settings.addressPositionIndex == 1) {
-                textPaint.textSize = 22f * scale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(RectF(cardX, cardY + cardH - 30f * scale, cardX + cardW, cardY + cardH), 12f * scale, 12f * scale, bgPaint)
-                canvas.drawText(addr, textCx, cardY + cardH - 8f * scale, textPaint)
-            }
-            if (settings.showCoordinates) {
-                textPaint.textSize = 22f * scale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(RectF(cardX, cardY + cardH - 26f * scale, cardX + cardW, cardY + cardH), 12f * scale, 12f * scale, bgPaint)
-                canvas.drawText(formatLatLon(loc.latitude, loc.longitude), textCx, cardY + cardH - 6f * scale, textPaint)
-            }
-            if (settings.showAddress && settings.addressPositionIndex == 2) {
-                val addrH = 30f * scale
-                val addrTop = cardY + cardH + 6f * scale
-                // Under the card (side-aware), not full-bleed center
-                textPaint.textSize = 22f * scale
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(RectF(cardX, addrTop, cardX + cardW, addrTop + addrH), 8f * scale, 8f * scale, bgPaint)
-                canvas.drawText(addr, textCx, addrTop + addrH - 8f * scale, textPaint)
+                drawBoundedAddressBlock(
+                    canvas = canvas,
+                    address = addr,
+                    textPaint = textPaint,
+                    left = cardX,
+                    top = cardY,
+                    outerWidth = cardW,
+                    scale = scale,
+                    w = w,
+                    settings = settings,
+                    bgPaint = bgPaint,
+                    cornerRadius = 12f * scale
+                )
             }
 
-            // Only push bottomY when map is center (chips stay clear of side map)
+            val coordStripH = 26f * scale
+            val coordTop = cardY + cardH - coordStripH
+            val bottomAddressLimit = if (settings.showCoordinates) coordTop else cardY + cardH
+
+            if (settings.showAddress && settings.addressPositionIndex == 1) {
+                val hPad = 8f * scale
+                val vPad = 6f * scale
+                textPaint.textSize = spToPx(mapAddressSp(settings), w)
+                val block = buildBoundedTextBlock(
+                    text = addr,
+                    basePaint = textPaint,
+                    outerWidth = cardW,
+                    hPad = hPad,
+                    vPad = vPad,
+                    maxLines = ADDRESS_MAX_LINES
+                )
+                val addrTop = (bottomAddressLimit - block.height).coerceAtLeast(cardY)
+                drawBoundedTextBlock(
+                    canvas = canvas,
+                    block = block,
+                    left = cardX,
+                    top = addrTop,
+                    outerWidth = cardW,
+                    hPad = hPad,
+                    vPad = vPad,
+                    bgPaint = bgPaint,
+                    cornerRadius = 12f * scale
+                )
+            }
+
+            if (settings.showCoordinates) {
+                textPaint.textSize = spToPx(mapAddressSp(settings), w)
+                textPaint.textAlign = Paint.Align.CENTER
+                canvas.drawRoundRect(
+                    RectF(cardX, coordTop, cardX + cardW, cardY + cardH),
+                    12f * scale,
+                    12f * scale,
+                    bgPaint
+                )
+                canvas.drawText(formatLatLon(loc.latitude, loc.longitude), textCx, cardY + cardH - 6f * scale, textPaint)
+            }
+
+            if (settings.showAddress && settings.addressPositionIndex == 2) {
+                val addrTop = cardY + cardH + 6f * scale
+                val pillW = minOf(cardW + 24f * scale, w - 2f * pad).coerceAtLeast(1f)
+                val maxLeft = (w - pad - pillW).coerceAtLeast(pad)
+                val pillLeft = (textCx - pillW / 2f).coerceIn(pad, maxLeft)
+                drawBoundedAddressBlock(
+                    canvas = canvas,
+                    address = addr,
+                    textPaint = textPaint,
+                    left = pillLeft,
+                    top = addrTop,
+                    outerWidth = pillW,
+                    scale = scale,
+                    w = w,
+                    settings = settings,
+                    bgPaint = bgPaint,
+                    cornerRadius = 8f * scale
+                )
+            }
+
             if (!layout.sidePane) {
                 bottomY = cardY - pad
             }
         }
 
-        if (settings.showCoordinates || (settings.showAddress && !settings.showMap)) {
+        if (!settings.showMap && settings.showLocationTextWithoutMap && (settings.showCoordinates || settings.showAddress)) {
             val coord = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "\u2014"
             val addr = loc?.address ?: "\u2014"
             val addrLines = addr.chunked(40)
-            val lineH = 32f * scale
-            val blockH = (if (settings.showCoordinates) lineH else 0f) + (if (settings.showAddress && !settings.showMap) addrLines.size * lineH else 0f) + 20f * scale
+            val standaloneSp = if (settings.compactUi) 11f else 13f
+            val lineH = spToPx(standaloneSp, w) * 1.35f
+            val showCoords = settings.showCoordinates
+            val showAddr = settings.showAddress
+            val blockH = (if (showCoords) lineH else 0f) + (if (showAddr) addrLines.size * lineH else 0f) + 20f * scale
             if (blockH > 0f) {
                 canvas.drawRoundRect(
                     RectF(pad * 2, bottomY - blockH, w - pad * 2, bottomY),
                     12f * scale, 12f * scale, bgPaint
                 )
-                textPaint.textSize = 30f * scale
-                var yOff = bottomY - blockH + lineH * 1.2f
-                if (settings.showCoordinates) {
+                textPaint.textSize = spToPx(standaloneSp, w)
+                var yOff = bottomY - blockH + lineH * 1.05f
+                if (showCoords) {
                     canvas.drawText(coord, w / 2f, yOff, textPaint)
                     yOff += lineH
                 }
-                if (settings.showAddress && !settings.showMap) {
-                    textPaint.textSize = 28f * scale
+                if (showAddr) {
                     for (line in addrLines) {
                         canvas.drawText(line, w / 2f, yOff, textPaint)
                         yOff += lineH
