@@ -195,21 +195,24 @@ object MediaUtils {
                             if (mutable != bmp) bmp.recycle()
 
                             val mapBmp = if (settings.showMap && locationUi?.latitude != null) {
+                                val density = context.resources.displayMetrics.density
+                                val cardDpW = if (settings.compactUi) 200f else 240f
+                                val cardDpH = if (settings.compactUi) 220f else 280f
                                 val isLand = mutable.width > mutable.height
-                                val cardDpW = when {
-                                    (settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3) && settings.compactUi -> 150f
-                                    settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3 -> 170f
-                                    settings.compactUi -> 200f
-                                    else -> 240f
+                                val pos = settings.effectiveMapPosition(isLand)
+                                val sidePane = pos == 2 || pos == 3
+                                val actualDpW = when {
+                                    sidePane && settings.compactUi -> 150f
+                                    sidePane -> 170f
+                                    else -> cardDpW
                                 }
-                                val cardDpH = when {
-                                    (settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3) && settings.compactUi -> 150f
-                                    settings.effectiveMapPosition(isLand) == 2 || settings.effectiveMapPosition(isLand) == 3 -> 170f
-                                    settings.compactUi -> 220f
-                                    else -> 280f
+                                val actualDpH = when {
+                                    sidePane && settings.compactUi -> 150f
+                                    sidePane -> 170f
+                                    else -> cardDpH
                                 }
-                                val snapW = dpToPx(cardDpW, mutable.width.toFloat()).toInt().coerceIn(200, 2000)
-                                val snapH = dpToPx(cardDpH, mutable.width.toFloat()).toInt().coerceIn(200, 2400)
+                                val snapW = (actualDpW * density).toInt().coerceIn(200, 1200)
+                                val snapH = (actualDpH * density).toInt().coerceIn(200, 1400)
                                 captureMapSnapshot(
                                     context = context,
                                     lat = locationUi.latitude,
@@ -759,17 +762,14 @@ object MediaUtils {
 
                 val fallbackMap = if (mapSamples.isEmpty() && settings.showMap) {
                     locationSamples.lastOrNull()?.location?.let { loc ->
-                        // Fallback uses preview card size at 1080p reference so zoom matches preview
-                        val snapW = 720
-                        val snapH = 840
                         captureMapSnapshot(
                             context = context,
                             lat = loc.latitude,
                             lon = loc.longitude,
                             zoom = settings.mapZoom,
                             styleUrl = resolveStyleUrl(settings, context),
-                            targetWidth = snapW,
-                            targetHeight = snapH
+                            targetWidth = 400,
+                            targetHeight = 480
                         )
                     }
                 } else null

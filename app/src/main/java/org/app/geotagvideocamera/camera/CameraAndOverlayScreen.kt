@@ -250,8 +250,8 @@ fun CameraAndOverlayScreen(
                         lon = ui.longitude,
                         zoom = settings.mapZoom,
                         styleUrl = resolveStyleUrl(settings, context),
-                        targetWidth = 720,
-                        targetHeight = 840
+                        targetWidth = 400,
+                        targetHeight = 480
                     )
                 }
                 if (bmp != null) {
