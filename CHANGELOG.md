@@ -1,3 +1,8 @@
+## v2.5.4
+
+- map and text size sync for cameraX (#210)
+
+
 ## v2.5.3
 
 - chore(deps): bump org.maplibre.gl:android-sdk from 13.5.0 to 13.5.1

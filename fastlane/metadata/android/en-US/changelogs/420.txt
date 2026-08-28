@@ -1,0 +1,1 @@
+- map and text size sync for cameraX (#210)
