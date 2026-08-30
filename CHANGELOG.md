@@ -1,3 +1,8 @@
+## v2.5.5
+
+- No user-facing changes were mentioned since previous release
+
+
 ## v2.5.4
 
 - map and text size sync for cameraX (#210)
