@@ -28,8 +28,8 @@ android {
         applicationId = "org.app.geotagvideocamera"
         minSdk = 24
         targetSdk = 37
-        versionCode = 430
-        versionName = "2.5.5"
+        versionCode = 440
+        versionName = "2.5.6"
 
         androidResources {
             localeFilters += setOf("en", "ar", "de", "es-rES", "es-rUS", "fr", "hr", "hu", "in", "it", "ja", "pl", "pt-rBR", "ru-rRU", "sv", "tr", "uk", "zh", "cs", "el", "fi", "ko", "nl", "vi")

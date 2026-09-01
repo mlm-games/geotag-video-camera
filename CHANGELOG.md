@@ -1,3 +1,11 @@
+## v2.5.6
+
+- chore(deps): bump androidx.navigation:navigation-compose
+- chore(deps): bump org.maplibre.gl:android-sdk from 13.5.1 to 13.6.0
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump actions/setup-java from 5 to 6
+
+
 ## v2.5.5
 
 - No user-facing changes were mentioned since previous release
