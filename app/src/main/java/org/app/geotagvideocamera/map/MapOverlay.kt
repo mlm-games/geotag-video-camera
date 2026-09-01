@@ -59,7 +59,7 @@ fun MapOverlay(
         cameraState = cameraState,
         options = MapOptions(
             renderOptions = RenderOptions(
-                renderMode = RenderOptions.RenderMode.TextureView
+                preferredRenderMode = RenderOptions.RenderMode.Texture
             )
         ),
         modifier = modifier

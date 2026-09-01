@@ -14,7 +14,7 @@ lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
 composeBom = "2026.08.01"
 lifecycleViewmodelNavigation3 = "2.11.0"
-maplibreComposeAndroid = "0.14.0"
+maplibreComposeAndroid = "0.15.0"
 material = "1.14.0"
 exifinterface = "1.4.2"
 datastorePreferences = "1.2.1"
@@ -67,6 +67,8 @@ androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycl
 androidx-camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "camera" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
 maplibre-compose-android = { module = "org.maplibre.compose:maplibre-compose-android", version.ref = "maplibreComposeAndroid" }
+maplibre-compose-runtime-vulkan-android = { module = "org.maplibre.compose:maplibre-compose-runtime-vulkan-android", version.ref = "maplibreComposeAndroid" }
+# maplibre-compose-runtime-opengl-android = { module = "org.maplibre.compose:maplibre-compose-runtime-opengl-android", version.ref = "maplibreComposeAndroid" }
 material = { module = "com.google.android.material:material", version.ref = "material" }
 microg-location = { group = "org.microg.gms", name = "play-services-location", version = "0.3.14.250932" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }

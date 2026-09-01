@@ -140,6 +140,7 @@ dependencies {
     // Location (MicroG coz FDroid)
     implementation(libs.microg.location)
     implementation(libs.maplibre.compose.android)
+    runtimeOnly(libs.maplibre.compose.runtime.vulkan.android)
 
     // UI components
     implementation(libs.androidx.appcompat)
