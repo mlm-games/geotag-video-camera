@@ -1,6 +1,6 @@
 [versions]
 coreLocationAltitude = "1.0.0"
-kotlin = "2.4.10"
+kotlin = "2.4.20"
 agp = "9.2.1"
 appcompat = "1.8.0"
 camera = "1.6.1"
