@@ -81,10 +81,11 @@ object MediaUtils {
             .format(System.currentTimeMillis())
 
         val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.jpg")
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/GeotagCamera")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }
 
@@ -105,6 +106,13 @@ object MediaUtils {
                         try {
                             location?.let { loc ->
                                 embedLocationMetadata(context.applicationContext, uri, loc)
+                            }
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                val pending = ContentValues().apply {
+                                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                                }
+                                context.contentResolver.update(uri, pending, null, null)
                             }
 
                             ContextCompat.getMainExecutor(context).execute {
@@ -179,10 +187,22 @@ object MediaUtils {
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     mediaExecutor.execute {
+                        val rotation = image.imageInfo.rotationDegrees
+                        val decoded: Bitmap? = try {
+                            image.toBitmap()
+                        } catch (t: Throwable) {
+                            Log.e("MediaUtils", "Image decode failed", t)
+                            null
+                        } finally {
+                            runCatching { image.close() }
+                        }
+                        var bmp = decoded ?: run {
+                            ContextCompat.getMainExecutor(context).execute {
+                                onError("Photo capture failed: decode error")
+                            }
+                            return@execute
+                        }
                         try {
-                            val rotation = image.imageInfo.rotationDegrees
-                            var bmp = image.toBitmap()
-                            image.close()
 
                             if (rotation != 0) {
                                 val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
@@ -466,6 +486,7 @@ object MediaUtils {
         val whitePaint = Paint().apply { color = android.graphics.Color.WHITE }
 
         var bottomY = h - pad
+        val topBarH: Float
 
         if (settings.showTopBar) {
             val date = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(System.currentTimeMillis())
@@ -481,6 +502,9 @@ object MediaUtils {
             textPaint.textSize = spToPx(accSp, w)
             val accW = textPaint.measureText(acc)
             canvas.drawText(acc, w - pad - accW, pad + textPaint.textSize * 1.5f, textPaint)
+            topBarH = pad + spToPx(timeSp, w) * 1.5f + spToPx(dateSp, w)
+        } else {
+            topBarH = pad
         }
 
         if (settings.showQrCode && loc?.latitude != null && loc.longitude != null) {
@@ -490,7 +514,7 @@ object MediaUtils {
             if (qrBmp != null) {
                 val qrSize = (if (settings.compactUi) 0.12f else 0.15f) * w
                 val left = w - pad - qrSize
-                val top = if (settings.showTopBar) textPaint.textSize * 2.3f + pad * 0.5f else pad
+                val top = topBarH + pad * 0.5f
                 val qrPad = 6f * densityScale
                 canvas.drawRoundRect(
                     RectF(left - qrPad, top - qrPad, left + qrSize + qrPad, top + qrSize + qrPad),
@@ -501,7 +525,7 @@ object MediaUtils {
             }
         }
 
-        if (settings.showMap && loc?.latitude != null && mapBitmap != null) {
+        if (settings.showMap && loc?.latitude != null && mapBitmap != null && !mapBitmap.isRecycled) {
             val isLandscape = w > h
             val layout = computeMapCardLayout(w, h, densityScale, settings, mapBitmap, isLandscape, dragFractionX, dragFractionY)
             val cardW = layout.cardW
@@ -518,11 +542,11 @@ object MediaUtils {
             val clipPath = android.graphics.Path().apply {
                 addRoundRect(mapCardRect, 12f * densityScale, 12f * densityScale, android.graphics.Path.Direction.CW)
             }
-            canvas.drawRoundRect(mapCardRect, 12f * densityScale, 12f * densityScale, borderPaint)
             canvas.save()
             canvas.clipPath(clipPath)
             canvas.drawBitmap(mapBitmap, null, mapCardRect, null)
             canvas.restore()
+            canvas.drawRoundRect(mapCardRect, 12f * densityScale, 12f * densityScale, borderPaint)
 
             val addr = loc?.address ?: "\u2014"
             val textCx = cardX + cardW / 2f
@@ -577,13 +601,19 @@ object MediaUtils {
                 val coord = formatLatLon(loc.latitude, loc.longitude)
                 textPaint.textSize = spToPx(mapAddressSp(settings), w)
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(
-                    RectF(cardX, coordTop, cardX + cardW, cardY + cardH),
-                    12f * densityScale,
-                    12f * densityScale,
-                    bgPaint
+                val radii = floatArrayOf(
+                    0f, 0f, 0f, 0f,
+                    12f * densityScale, 12f * densityScale,
+                    12f * densityScale, 12f * densityScale
                 )
-                val coordTextWidth = textPaint.measureText(coord)
+                val coordRect = RectF(cardX, coordTop, cardX + cardW, cardY + cardH)
+                val coordPath = android.graphics.Path().apply {
+                    addRoundRect(coordRect, radii, android.graphics.Path.Direction.CW)
+                }
+                canvas.save()
+                canvas.clipPath(coordPath)
+                canvas.drawRect(coordRect, bgPaint)
+                canvas.restore()
                 canvas.drawText(coord, textCx, cardY + cardH - 6f * densityScale, textPaint)
             }
 
@@ -617,27 +647,31 @@ object MediaUtils {
 
         if (settings.showSpeed || settings.showGpsStatus) {
             val chips = buildList {
-                if (settings.showSpeed) add(loc?.let { formatSpeed(it.speedMps ?: 0f, settings.unitsIndex) } ?: "\u2014")
+                if (settings.showSpeed) add(speedTextOrNull(loc?.speedMps, settings.unitsIndex) ?: "\u2014")
                 if (settings.showGpsStatus) add(loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS")
             }
             val chipH = dpToPx(if (settings.compactUi) 26f else 30f, w)
-            var chipX = w / 2f - (chips.size * 140f * densityScale) / 2f
-            for (chip in chips) {
-                val cw = textPaint.measureText(chip) + dpToPx(16f, w)
+            val gap = 12f * densityScale
+            val widths = chips.map { textPaint.measureText(it) + dpToPx(16f, w) }
+            var chipX = w / 2f - (widths.sum() + gap * (chips.size - 1).coerceAtLeast(0)) / 2f
+            for ((i, chip) in chips.withIndex()) {
+                val cw = widths[i]
                 canvas.drawRoundRect(
                     RectF(chipX, bottomY - chipH, chipX + cw, bottomY),
                     8f * densityScale, 8f * densityScale, bgPaint
                 )
-                canvas.drawText(chip, chipX + cw / 2f, bottomY - chipH * 0.3f, textPaint)
-                chipX += cw + 12f * densityScale
+                val fm = textPaint.fontMetrics
+                val chipCy = bottomY - chipH / 2f
+                val baseline = chipCy - (fm.ascent + fm.descent) / 2f
+                canvas.drawText(chip, chipX + cw / 2f, baseline, textPaint)
+                chipX += cw + gap
             }
             bottomY -= chipH + pad
         }
 
         if (!settings.showMap && settings.showLocationTextWithoutMap && (settings.showCoordinates || settings.showAddress)) {
             val coord = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "\u2014"
-            val addr = loc?.address ?: "\u2014"
-            val addrLines = addr.chunked(40)
+            val addrLines = formatStandaloneAddressLines(loc?.address)
             val standaloneSp = if (settings.compactUi) 11f else 13f
             val lineH = spToPx(standaloneSp, w) * 1.35f
             // Respect individual toggles for block height, matching StandaloneLocationOverlay
@@ -650,7 +684,8 @@ object MediaUtils {
                     12f * densityScale, 12f * densityScale, bgPaint
                 )
                 textPaint.textSize = spToPx(standaloneSp, w)
-                var yOff = bottomY - blockH + lineH * 1.05f
+                val fmStandalone = textPaint.fontMetrics
+                var yOff = bottomY - blockH + (lineH + (fmStandalone.descent - fmStandalone.ascent)) / 2f - fmStandalone.descent
                 if (showCoords) {
                     canvas.drawText(coord, w / 2f, yOff, textPaint)
                     yOff += lineH
@@ -661,6 +696,7 @@ object MediaUtils {
                         yOff += lineH
                     }
                 }
+                bottomY -= blockH + pad
             }
         }
     }
@@ -675,7 +711,9 @@ object MediaUtils {
         targetHeight: Int
     ): Bitmap? {
         val latch = CountDownLatch(1)
-        var result: Bitmap? = null
+        val resultBox = arrayOfNulls<Bitmap>(1)
+        val snapshotterBox = arrayOfNulls<org.maplibre.android.snapshotter.MapSnapshotter>(1)
+        val appContext = context.applicationContext
         runCatching {
             val cameraPosition = org.maplibre.android.camera.CameraPosition.Builder()
                 .target(org.maplibre.android.geometry.LatLng(lat, lon))
@@ -686,20 +724,37 @@ object MediaUtils {
                     val opts = org.maplibre.android.snapshotter.MapSnapshotter.Options(targetWidth, targetHeight)
                         .withStyleBuilder(org.maplibre.android.maps.Style.Builder().fromUri(styleUrl))
                         .withCameraPosition(cameraPosition)
-                    val ss = org.maplibre.android.snapshotter.MapSnapshotter(context, opts)
+                    val ss = org.maplibre.android.snapshotter.MapSnapshotter(appContext, opts)
+                    snapshotterBox[0] = ss
                     ss.start(object : org.maplibre.android.snapshotter.MapSnapshotter.SnapshotReadyCallback {
                         override fun onSnapshotReady(snapshot: org.maplibre.android.snapshotter.MapSnapshot) {
-                            result = snapshot.bitmap
+                            if (latch.count == 0L) {
+                                runCatching { snapshot.bitmap.recycle() }
+                            } else {
+                                resultBox[0] = snapshot.bitmap
+                                latch.countDown()
+                            }
+                            runCatching { ss.cancel() }
+                        }
+                    }, object : org.maplibre.android.snapshotter.MapSnapshotter.ErrorHandler {
+                        override fun onError(error: String) {
+                            Log.w("MediaUtils", "Map snapshot error: $error")
                             latch.countDown()
                         }
                     })
-                }.onFailure { latch.countDown() }
+                }.onFailure {
+                    Log.w("MediaUtils", "Map snapshot start failed", it)
+                    latch.countDown()
+                }
             }
-            latch.await(10, TimeUnit.SECONDS)
+            val done = latch.await(10, TimeUnit.SECONDS)
+            if (!done) {
+                Handler(Looper.getMainLooper()).post { runCatching { snapshotterBox[0]?.cancel() } }
+            }
         }.onFailure { e ->
             Log.w("MediaUtils", "Map snapshot failed", e)
         }
-        return result
+        return resultBox[0]
     }
 
     private fun findNearestLocation(samples: List<LocationSample>, timeUs: Long): LocationUi? {
@@ -753,94 +808,135 @@ object MediaUtils {
             .format(System.currentTimeMillis())
         val tempInput = File(context.cacheDir, "geotag_video_${outputName}_input.mp4")
         val tempOutput = File(context.cacheDir, "geotag_video_${outputName}_overlay.mp4")
+        val appContext = context.applicationContext
 
         mediaExecutor.execute {
+            var finished = false
+            fun recycleOwnedMaps(fallback: Bitmap?) {
+                mapSamples.forEach { runCatching { it.bitmap.recycle() } }
+                fallback?.let { runCatching { it.recycle() } }
+            }
             try {
-                context.contentResolver.openInputStream(inputUri)?.use { inp ->
+                val copied = context.contentResolver.openInputStream(inputUri)?.use { inp ->
                     tempInput.outputStream().use { out -> inp.copyTo(out) }
+                    true
+                } ?: false
+                if (!copied || tempInput.length() <= 0L) {
+                    tempInput.delete()
+                    recycleOwnedMaps(null)
+                    ContextCompat.getMainExecutor(context).execute {
+                        onError("Failed to prepare video: unreadable input")
+                    }
+                    return@execute
                 }
 
                 val fallbackMap = if (mapSamples.isEmpty() && settings.showMap) {
                     locationSamples.lastOrNull()?.location?.let { loc ->
                         captureMapSnapshot(
-                            context = context,
+                            context = appContext,
                             lat = loc.latitude,
                             lon = loc.longitude,
                             zoom = settings.mapZoom,
-                            styleUrl = resolveStyleUrl(settings, context),
+                            styleUrl = resolveStyleUrl(settings, appContext),
                             targetWidth = 400,
                             targetHeight = 480
                         )
                     }
                 } else null
 
-                Handler(Looper.getMainLooper()).postDelayed({
-                    val mediaItem = MediaItem.fromUri(Uri.fromFile(tempInput))
+                val mediaItem = MediaItem.fromUri(Uri.fromFile(tempInput))
 
-                    val overlay = object : CanvasOverlay(true) {
-                        override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
-                            val loc = findNearestLocation(locationSamples, presentationTimeUs)
-                            val mapBmp = findNearestMap(mapSamples, presentationTimeUs) ?: fallbackMap
-                            drawVideoOverlays(
-                                canvas = canvas,
-                                loc = loc,
-                                settings = settings,
-                                mapBitmap = mapBmp,
-                                dragFractionX = dragFractionX,
-                                dragFractionY = dragFractionY,
-                                presentationTimeUs = presentationTimeUs,
-                                recordingStartEpochMs = recordingStartEpochMs
-                            )
+                val overlay = object : CanvasOverlay(true) {
+                    override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
+                        val loc = findNearestLocation(locationSamples, presentationTimeUs)
+                        val mapBmp = findNearestMap(mapSamples, presentationTimeUs) ?: fallbackMap
+                        drawVideoOverlays(
+                            canvas = canvas,
+                            loc = loc,
+                            settings = settings,
+                            mapBitmap = mapBmp,
+                            dragFractionX = dragFractionX,
+                            dragFractionY = dragFractionY,
+                            presentationTimeUs = presentationTimeUs,
+                            recordingStartEpochMs = recordingStartEpochMs
+                        )
+                    }
+                }
+
+                val effects = Effects(emptyList(), listOf(OverlayEffect(listOf(overlay))))
+                val editedMediaItem = EditedMediaItem.Builder(mediaItem)
+                    .setEffects(effects)
+                    .build()
+
+                val transformer = Transformer.Builder(appContext)
+                    .build()
+
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
+                        finished = true
+                        val savedUri = saveVideoToMediaStore(appContext, tempOutput)
+                        tempOutput.delete()
+                        tempInput.delete()
+                        recycleOwnedMaps(fallbackMap)
+                        ContextCompat.getMainExecutor(context).execute {
+                            if (savedUri != null) {
+                                runCatching { appContext.contentResolver.delete(originalUri, null, null) }
+                                onComplete(savedUri)
+                            } else onError("Failed to save processed video")
                         }
                     }
 
-                    val effects = Effects(emptyList(), listOf(OverlayEffect(listOf(overlay))))
-                    val editedMediaItem = EditedMediaItem.Builder(mediaItem)
-                        .setEffects(effects)
-                        .build()
-
-                    val transformer = Transformer.Builder(context)
-                        .build()
-
-                    val listener = object : Transformer.Listener {
-                        override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
-                            val savedUri = saveVideoToMediaStore(context, tempOutput)
-                            tempOutput.delete()
-                            tempInput.delete()
-                            mapSamples.forEach { it.bitmap.recycle() }
-                            fallbackMap?.recycle()
-                            ContextCompat.getMainExecutor(context).execute {
-                                if (savedUri != null) {
-                                    runCatching { context.contentResolver.delete(originalUri, null, null) }
-                                    onComplete(savedUri)
-                                } else onError("Failed to save processed video")
-                            }
-                        }
-
-                        override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exception: ExportException) {
-                            Log.e("MediaUtils", "Video overlay failed", exception)
-                            tempOutput.delete()
-                            tempInput.delete()
-                            mapSamples.forEach { it.bitmap.recycle() }
-                            fallbackMap?.recycle()
-                            ContextCompat.getMainExecutor(context).execute {
-                                onError("Video processing: ${exception.message}")
-                            }
+                    override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exception: ExportException) {
+                        finished = true
+                        Log.e("MediaUtils", "Video overlay failed", exception)
+                        tempOutput.delete()
+                        tempInput.delete()
+                        recycleOwnedMaps(fallbackMap)
+                        ContextCompat.getMainExecutor(context).execute {
+                            onError("Video processing: ${exception.message}")
                         }
                     }
+                }
 
-                    transformer.addListener(listener)
-                    transformer.start(editedMediaItem, tempOutput.absolutePath)
-                }, 500)
+                transformer.addListener(listener)
+                transformer.start(editedMediaItem, tempOutput.absolutePath)
             } catch (e: Exception) {
-                tempInput.delete()
-                tempOutput.delete()
-                mapSamples.forEach { it.bitmap.recycle() }
-                ContextCompat.getMainExecutor(context).execute {
-                    onError("Failed to prepare video: ${e.message}")
+                if (!finished) {
+                    tempInput.delete()
+                    tempOutput.delete()
+                    recycleOwnedMaps(null)
+                    ContextCompat.getMainExecutor(context).execute {
+                        onError("Failed to prepare video: ${e.message}")
+                    }
                 }
             }
         }
+    }
+
+    private fun speedTextOrNull(speedMps: Float?, unitsIndex: Int): String? =
+        speedMps?.let { formatSpeed(it, unitsIndex) }
+
+    internal fun formatStandaloneAddressLines(address: String?, maxLines: Int = 3): List<String> {
+        val raw = address?.trim().orEmpty()
+        if (raw.isEmpty()) return listOf("\u2014")
+        val words = raw.split(Regex("\\s+"))
+        val lines = mutableListOf<String>()
+        var current = StringBuilder()
+        for (word in words) {
+            val candidate = if (current.isEmpty()) word else "$current $word"
+            if (candidate.length > 40 && current.isNotEmpty()) {
+                lines.add(current.toString())
+                if (lines.size == maxLines) return lines
+                current = StringBuilder(word)
+            } else {
+                current = StringBuilder(candidate)
+            }
+        }
+        if (current.isNotEmpty() && lines.size < maxLines) lines.add(current.toString())
+        if (lines.size == maxLines && (words.size > lines.sumOf { it.split(' ').size })) {
+            lines[maxLines - 1] = lines[maxLines - 1].take(40) + "\u2026"
+        }
+        return lines.ifEmpty { listOf("\u2014") }
     }
 
     private fun drawVideoOverlays(
@@ -869,6 +965,7 @@ object MediaUtils {
         }
         val whitePaint = Paint().apply { color = android.graphics.Color.WHITE }
 
+        val topBarBottom: Float
         if (settings.showTopBar) {
             val videoTimeMs = recordingStartEpochMs + presentationTimeUs / 1000
             val date = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(videoTimeMs)
@@ -878,13 +975,16 @@ object MediaUtils {
             val timeSp = if (settings.compactUi) 12f else 14f
             val accSp = if (settings.compactUi) 10f else 12f
             textPaint.textSize = spToPx(dateSp, w)
-            canvas.drawText(time, pad, pad + textPaint.textSize, textPaint)
-            textPaint.textSize = spToPx(dateSp, w)
-            canvas.drawText(date, pad, pad + textPaint.textSize * 2.3f, textPaint)
+            canvas.drawText(date, pad, pad + textPaint.textSize, textPaint)
+            textPaint.textSize = spToPx(timeSp, w)
+            canvas.drawText(time, pad, pad + textPaint.textSize * 1.5f + spToPx(dateSp, w), textPaint)
             textPaint.textSize = spToPx(accSp, w)
             val accW = textPaint.measureText(acc)
             canvas.drawText(acc, w - pad - accW, pad + textPaint.textSize * 1.5f, textPaint)
             textPaint.textSize = spToPx(timeSp, w)
+            topBarBottom = pad + spToPx(timeSp, w) * 1.5f + spToPx(dateSp, w)
+        } else {
+            topBarBottom = pad
         }
 
         if (settings.showQrCode && loc?.latitude != null && loc.longitude != null) {
@@ -894,7 +994,7 @@ object MediaUtils {
             if (qrBmp != null) {
                 val qrSize = (if (settings.compactUi) 0.12f else 0.15f) * w
                 val left = w - pad - qrSize
-                val top = if (settings.showTopBar) textPaint.textSize * 2.3f + pad * 0.5f else pad
+                val top = topBarBottom + pad * 0.5f
                 val qrPad = 6f * scale
                 canvas.drawRoundRect(
                     RectF(left - qrPad, top - qrPad, left + qrSize + qrPad, top + qrSize + qrPad),
@@ -911,24 +1011,29 @@ object MediaUtils {
 
         if (settings.showSpeed || settings.showGpsStatus) {
             val chips = buildList {
-                if (settings.showSpeed) add(loc?.let { formatSpeed(it.speedMps ?: 0f, settings.unitsIndex) } ?: "\u2014")
+                if (settings.showSpeed) add(speedTextOrNull(loc?.speedMps, settings.unitsIndex) ?: "\u2014")
                 if (settings.showGpsStatus) add(loc?.accuracyMeters?.let { "\u00b1${it.toInt()} m" } ?: "No GPS")
             }
             val chipH = dpToPx(if (settings.compactUi) 26f else 30f, w)
-            var chipX = w / 2f - (chips.size * 140f * scale) / 2f
-            for (chip in chips) {
-                val cw = textPaint.measureText(chip) + dpToPx(16f, w)
+            val gap = 12f * scale
+            val widths = chips.map { textPaint.measureText(it) + dpToPx(16f, w) }
+            var chipX = w / 2f - (widths.sum() + gap * (chips.size - 1).coerceAtLeast(0)) / 2f
+            for ((i, chip) in chips.withIndex()) {
+                val cw = widths[i]
                 canvas.drawRoundRect(
                     RectF(chipX, bottomY - chipH, chipX + cw, bottomY),
                     8f * scale, 8f * scale, bgPaint
                 )
-                canvas.drawText(chip, chipX + cw / 2f, bottomY - chipH * 0.3f, textPaint)
-                chipX += cw + 12f * scale
+                val fm = textPaint.fontMetrics
+                val chipCy = bottomY - chipH / 2f
+                val baseline = chipCy - (fm.ascent + fm.descent) / 2f
+                canvas.drawText(chip, chipX + cw / 2f, baseline, textPaint)
+                chipX += cw + gap
             }
             bottomY -= chipH + pad
         }
 
-        if (settings.showMap && loc?.latitude != null && mapBitmap != null) {
+        if (settings.showMap && loc?.latitude != null && mapBitmap != null && !mapBitmap.isRecycled) {
             val isLandscape = w > h
             val layout = computeMapCardLayout(w, h, scale, settings, mapBitmap, isLandscape, dragFractionX, dragFractionY)
             val cardW = layout.cardW
@@ -941,7 +1046,6 @@ object MediaUtils {
                 style = Paint.Style.STROKE
                 strokeWidth = 2f * scale
             }
-            canvas.drawRoundRect(mapCardRect, 12f * scale, 12f * scale, borderPaint)
             canvas.save()
             val clipPath = Path().apply {
                 addRoundRect(mapCardRect, 12f * scale, 12f * scale, Path.Direction.CW)
@@ -949,6 +1053,7 @@ object MediaUtils {
             canvas.clipPath(clipPath)
             canvas.drawBitmap(mapBitmap, null, mapCardRect, null)
             canvas.restore()
+            canvas.drawRoundRect(mapCardRect, 12f * scale, 12f * scale, borderPaint)
 
             val addr = loc?.address ?: "\u2014"
             val textCx = cardX + cardW / 2f
@@ -1002,12 +1107,19 @@ object MediaUtils {
             if (settings.showCoordinates) {
                 textPaint.textSize = spToPx(mapAddressSp(settings), w)
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawRoundRect(
-                    RectF(cardX, coordTop, cardX + cardW, cardY + cardH),
-                    12f * scale,
-                    12f * scale,
-                    bgPaint
+                val radii = floatArrayOf(
+                    0f, 0f, 0f, 0f,
+                    12f * scale, 12f * scale,
+                    12f * scale, 12f * scale
                 )
+                val coordRect = RectF(cardX, coordTop, cardX + cardW, cardY + cardH)
+                val coordPath = Path().apply {
+                    addRoundRect(coordRect, radii, Path.Direction.CW)
+                }
+                canvas.save()
+                canvas.clipPath(coordPath)
+                canvas.drawRect(coordRect, bgPaint)
+                canvas.restore()
                 canvas.drawText(formatLatLon(loc.latitude, loc.longitude), textCx, cardY + cardH - 6f * scale, textPaint)
             }
 
@@ -1038,8 +1150,7 @@ object MediaUtils {
 
         if (!settings.showMap && settings.showLocationTextWithoutMap && (settings.showCoordinates || settings.showAddress)) {
             val coord = loc?.let { formatLatLon(it.latitude, it.longitude) } ?: "\u2014"
-            val addr = loc?.address ?: "\u2014"
-            val addrLines = addr.chunked(40)
+            val addrLines = formatStandaloneAddressLines(loc?.address)
             val standaloneSp = if (settings.compactUi) 11f else 13f
             val lineH = spToPx(standaloneSp, w) * 1.35f
             val showCoords = settings.showCoordinates
@@ -1051,7 +1162,8 @@ object MediaUtils {
                     12f * scale, 12f * scale, bgPaint
                 )
                 textPaint.textSize = spToPx(standaloneSp, w)
-                var yOff = bottomY - blockH + lineH * 1.05f
+                val fmStandalone = textPaint.fontMetrics
+                var yOff = bottomY - blockH + (lineH + (fmStandalone.descent - fmStandalone.ascent)) / 2f - fmStandalone.descent
                 if (showCoords) {
                     canvas.drawText(coord, w / 2f, yOff, textPaint)
                     yOff += lineH
@@ -1062,6 +1174,7 @@ object MediaUtils {
                         yOff += lineH
                     }
                 }
+                bottomY -= blockH + pad
             }
         }
     }
@@ -1098,11 +1211,15 @@ object MediaUtils {
 
     /**
      * Saves a bitmap to MediaStore under Pictures/GeotagCamera as a JPEG.
+     *
+     * EXIF is embedded while IS_PENDING=1 so indexers never observe a file
+     * whose claimed metadata differs from its bytes.
      */
     fun saveBitmapToPictures(context: Context, bitmap: Bitmap, location: Location? = null): Uri? {
+        val appContext = context.applicationContext
         val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
             .format(System.currentTimeMillis())
-        val resolver = context.contentResolver
+        val resolver = appContext.contentResolver
 
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "geotag_${name}.jpg")
@@ -1127,13 +1244,14 @@ object MediaUtils {
                     throw IOException("Bitmap compress() returned false")
                 }
             }
+
+            location?.let { embedLocationMetadata(appContext, uri, it) }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentValues.clear()
                 contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
                 resolver.update(uri, contentValues, null, null)
             }
-
-            location?.let { embedLocationMetadata(context.applicationContext, uri, it) }
 
             return uri
         } catch (e: Exception) {

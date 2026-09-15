@@ -3,8 +3,12 @@ package org.app.geotagvideocamera.map
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.delay
 import org.app.geotagvideocamera.settings.SettingsState
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.rememberCameraState
@@ -42,9 +46,12 @@ fun MapOverlay(
         )
     )
 
-    // Recenter when coordinates or zoom change
+    var recenterSeq by remember { mutableLongStateOf(0L) }
     LaunchedEffect(lat, lon, settings.mapZoom) {
         if (lat != null && lon != null) {
+            val mySeq = ++recenterSeq
+            delay(350)
+            if (mySeq != recenterSeq) return@LaunchedEffect
             cameraState.animateTo(
                 cameraState.position.copy(
                     target = Position(latitude = lat, longitude = lon),

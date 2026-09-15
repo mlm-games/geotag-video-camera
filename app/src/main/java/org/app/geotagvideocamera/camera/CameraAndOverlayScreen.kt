@@ -96,6 +96,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -215,6 +216,7 @@ fun CameraAndOverlayScreen(
     var mode by remember { mutableStateOf(CameraMode.PHOTO) }
     var isCapturing by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
+    var isProcessingVideo by remember { mutableStateOf(false) }
     var recordingStartNanos by remember { mutableLongStateOf(0L) }
     var recordingStartEpochMs by remember { mutableLongStateOf(0L) }
     val recordingLocationSamples = remember { Collections.synchronizedList(mutableListOf<LocationSample>()) }
@@ -222,7 +224,20 @@ fun CameraAndOverlayScreen(
     val currentRecordingState = remember { mutableStateOf<Recording?>(null) }
     val scope = rememberCoroutineScope()
 
-    // Collect location samples during recording for time-series video overlay
+    fun snapshotLockedSamples(): Pair<List<LocationSample>, List<MapSample>> =
+        Pair(
+            synchronized(recordingLocationSamples) { recordingLocationSamples.toList() },
+            synchronized(recordingMapSamples) { recordingMapSamples.toList() }
+        )
+
+    fun clearRecordingBuffers() {
+        synchronized(recordingLocationSamples) { recordingLocationSamples.clear() }
+        synchronized(recordingMapSamples) {
+            recordingMapSamples.forEach { runCatching { it.bitmap.recycle() } }
+            recordingMapSamples.clear()
+        }
+    }
+
     LaunchedEffect(isRecording) {
         if (!isRecording) return@LaunchedEffect
         val startNanos = recordingStartNanos
@@ -240,25 +255,32 @@ fun CameraAndOverlayScreen(
         if (!isRecording || !settings.showMap) return@LaunchedEffect
         val startNanos = recordingStartNanos
         while (isRecording) {
+            ensureActive()
             val ui = locationUi
             if (ui?.latitude != null && ui.longitude != null) {
                 val tUs = (System.nanoTime() - startNanos) / 1_000
                 val bmp = withContext(Dispatchers.IO) {
                     MediaUtils.captureMapSnapshot(
-                        context = context,
+                        context = context.applicationContext,
                         lat = ui.latitude,
                         lon = ui.longitude,
                         zoom = settings.mapZoom,
-                        styleUrl = resolveStyleUrl(settings, context),
+                        styleUrl = resolveStyleUrl(settings, context.applicationContext),
                         targetWidth = 400,
                         targetHeight = 480
                     )
                 }
+                if (!isRecording) {
+                    bmp?.recycle()
+                    break
+                }
                 if (bmp != null) {
-                    if (recordingMapSamples.size >= 40) {
-                        recordingMapSamples.removeAt(0).bitmap.recycle()
+                    synchronized(recordingMapSamples) {
+                        if (recordingMapSamples.size >= 40) {
+                            recordingMapSamples.removeAt(0).bitmap.recycle()
+                        }
+                        recordingMapSamples.add(MapSample(tUs, bmp))
                     }
-                    recordingMapSamples.add(MapSample(tUs, bmp))
                 }
             }
             delay(2000)
@@ -399,7 +421,7 @@ fun CameraAndOverlayScreen(
             )
         }
 
-        val controlsHidden = isCapturing || isRecording
+        val controlsHidden = isCapturing || isRecording || isProcessingVideo
         if (!settings.hideModeButton && !controlsHidden) {
             CameraModeToggle(
                 currentMode = mode,
@@ -445,15 +467,19 @@ fun CameraAndOverlayScreen(
                                         return@launch
                                     }
                                     val bmp = copyWindowBitmap(activity)
-                                    if (bmp != null) {
-                                        val uri = MediaUtils.saveBitmapToPictures(context, bmp, location = tracker.lastRawLocation)
-                                        if (uri != null) {
-                                            Toast.makeText(context, "Screenshot saved", Toast.LENGTH_SHORT).show()
+                                    try {
+                                        if (bmp != null) {
+                                            val uri = MediaUtils.saveBitmapToPictures(context, bmp, location = tracker.lastRawLocation)
+                                            if (uri != null) {
+                                                Toast.makeText(context, "Screenshot saved", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Failed to capture screenshot", Toast.LENGTH_SHORT).show()
                                         }
-                                    } else {
-                                        Toast.makeText(context, "Failed to capture screenshot", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        bmp?.takeIf { !it.isRecycled }?.recycle()
+                                        isCapturing = false
                                     }
-                                    isCapturing = false
                                 }
                             }
                         }
@@ -463,7 +489,13 @@ fun CameraAndOverlayScreen(
                                     currentRecordingState.value?.stop()
                                     currentRecordingState.value = null
                                     isRecording = false
-                                } else {
+                                } else if (!isProcessingVideo) {
+                                    clearRecordingBuffers()
+                                    recordingStartNanos = System.nanoTime()
+                                    recordingStartEpochMs = System.currentTimeMillis()
+                                    locationUi?.let { ui ->
+                                        recordingLocationSamples.add(LocationSample(0L, ui))
+                                    }
                                     val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
                                         .format(System.currentTimeMillis())
                                     val contentValues = ContentValues().apply {
@@ -486,29 +518,36 @@ fun CameraAndOverlayScreen(
                                                     isRecording = false
                                                     currentRecordingState.value = null
                                                     if (event.hasError()) {
+                                                        clearRecordingBuffers()
                                                         Toast.makeText(context, "Video recording failed", Toast.LENGTH_SHORT).show()
                                                     } else {
                                                         val videoUri = event.outputResults.outputUri
                                                         if (videoUri != null && (settings.showQrCode || settings.showTopBar || settings.showSpeed || settings.showGpsStatus || settings.showCoordinates || settings.showMap)) {
                                                             Toast.makeText(context, "Processing overlays...", Toast.LENGTH_SHORT).show()
+                                                            val (locSamples, mapSamples) = snapshotLockedSamples()
+                                                            clearRecordingBuffers()
+                                                            isProcessingVideo = true
                                                             MediaUtils.processVideoWithOverlay(
-                                                                context = context,
+                                                                context = context.applicationContext,
                                                                 inputUri = videoUri,
                                                                 originalUri = videoUri,
-                                                                locationSamples = recordingLocationSamples.toList(),
-                                                                mapSamples = recordingMapSamples.toList(),
+                                                                locationSamples = locSamples,
+                                                                mapSamples = mapSamples,
                                                                 settings = settings,
                                                                 dragFractionX = dragFraction.x,
                                                                 dragFractionY = dragFraction.y,
                                                                 recordingStartEpochMs = recordingStartEpochMs,
                                                                 onComplete = { uri ->
+                                                                    isProcessingVideo = false
                                                                     Toast.makeText(context, "Recording saved (with overlay)", Toast.LENGTH_SHORT).show()
                                                                 },
                                                                 onError = { msg ->
+                                                                    isProcessingVideo = false
                                                                     Toast.makeText(context, "Raw recording saved (overlay failed: $msg)", Toast.LENGTH_LONG).show()
                                                                 }
                                                             )
                                                         } else {
+                                                            clearRecordingBuffers()
                                                             Toast.makeText(context, "Recording saved", Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
@@ -516,14 +555,6 @@ fun CameraAndOverlayScreen(
                                                 else -> {}
                                             }
                                         }
-                                    recordingStartNanos = System.nanoTime()
-                                    recordingStartEpochMs = System.currentTimeMillis()
-                                    recordingLocationSamples.clear()
-                                    recordingMapSamples.forEach { it.bitmap.recycle() }
-                                    recordingMapSamples.clear()
-                                    locationUi?.let { ui ->
-                                        recordingLocationSamples.add(LocationSample(0L, ui))
-                                    }
                                     isRecording = true
                                 }
                             } else {
@@ -567,6 +598,22 @@ fun CameraAndOverlayScreen(
                     .align(Alignment.TopCenter)
                     .padding(top = 12.dp)
             )
+        }
+
+        if (isProcessingVideo && !isRecording) {
+            Surface(
+                color = Color(0xB3000000),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+            ) {
+                Text(
+                    text = "Processing overlays…",
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
         }
 
         val usingDemoTiles = remember(settings) { usesDemoTiles(settings) }
@@ -987,7 +1034,7 @@ private fun OverlayHud(
                     shape = RoundedCornerShape(chipCorner)
                 ) {
                     Text(
-                        text = loc?.let { formatSpeed(it.speedMps ?: 0f, settings.unitsIndex) } ?: "—",
+                        text = loc?.speedMps?.let { formatSpeed(it, settings.unitsIndex) } ?: "—",
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = chipPadH, vertical = chipPadV),
                         fontSize = chipFont

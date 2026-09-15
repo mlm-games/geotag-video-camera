@@ -83,7 +83,9 @@ class LocationTracker(context: Context) {
                 longitude = l.longitude,
                 accuracyMeters = l.accuracy,
                 speedMps = if (l.hasSpeed()) l.speed else null,
-                address = null
+                address = _state.value?.address?.takeIf {
+                    lastGeocodeLocation?.distanceTo(l)?.let { d -> d < 50f } == true
+                }
             )
             _state.value = ui
 
@@ -99,11 +101,7 @@ class LocationTracker(context: Context) {
                 val line = geocode(lat, lon)?.getAddressLine(0)
                 if (line != null && requestSeq == geocodeSeq) {
                     val current = _state.value
-                    if (
-                        current != null &&
-                        current.latitude == lat &&
-                        current.longitude == lon
-                    ) {
+                    if (current != null) {
                         _state.value = current.copy(address = line)
                     }
                 }
@@ -123,15 +121,16 @@ class LocationTracker(context: Context) {
             longitude = lon,
             accuracyMeters = 5f,
             speedMps = null,
-            address = null
+            address = _state.value?.address
         )
         _state.value = ui
 
         scope.launch(Dispatchers.IO) {
-            val line = geocode(lat, lon)?.getAddressLine(0)
-            _state.value = _state.value?.copy(
-                address = line ?: "Golden Gate Bridge, San Francisco, CA"
-            )
+            val line = geocode(lat, lon)?.getAddressLine(0) ?: return@launch
+            val current = _state.value
+            if (current != null && current.latitude == lat && current.longitude == lon) {
+                _state.value = current.copy(address = line)
+            }
         }
     }
 
@@ -144,7 +143,12 @@ class LocationTracker(context: Context) {
             .setMinUpdateIntervalMillis(600L)
             .setMinUpdateDistanceMeters(2f)
             .build()
-        client.requestLocationUpdates(req, callback, Looper.getMainLooper())
+        try {
+            client.requestLocationUpdates(req, callback, Looper.getMainLooper())
+        } catch (e: SecurityException) {
+            started = false
+            android.util.Log.w("LocationTracker", "start() without location permission", e)
+        }
     }
 
     fun stop() {
