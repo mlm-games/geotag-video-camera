@@ -11,10 +11,11 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
 import org.app.geotagvideocamera.settings.SettingsState
 import org.maplibre.compose.camera.CameraPosition
-import org.maplibre.compose.camera.rememberCameraState
-import org.maplibre.compose.map.MapOptions
+import org.maplibre.compose.map.AndroidRenderMode
+import org.maplibre.compose.map.MapUiOptions
 import org.maplibre.compose.map.MaplibreMap
-import org.maplibre.compose.map.RenderOptions
+import org.maplibre.compose.map.rememberMapState
+import org.maplibre.compose.map.renderMode
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Position
 
@@ -39,12 +40,21 @@ fun MapOverlay(
     val initialLat = lat ?: 0.0
     val initialLon = lon ?: 0.0
 
-    val cameraState = rememberCameraState(
-        firstPosition = CameraPosition(
+    val mapState = rememberMapState(
+        baseStyle = BaseStyle.Uri(styleUrl),
+        initialCameraPosition = CameraPosition(
             target = Position(latitude = initialLat, longitude = initialLon),
             zoom = settings.mapZoom.toDouble()
         )
     )
+
+    // Texture view so Compose clipping/alpha apply over the camera preview,
+    // equivalent to the pre-0.16 RenderOptions.RenderMode.Texture setting.
+    val uiOptions = remember {
+        MapUiOptions {
+            renderMode = AndroidRenderMode.Texture
+        }
+    }
 
     var recenterSeq by remember { mutableLongStateOf(0L) }
     LaunchedEffect(lat, lon, settings.mapZoom) {
@@ -52,8 +62,8 @@ fun MapOverlay(
             val mySeq = ++recenterSeq
             delay(350)
             if (mySeq != recenterSeq) return@LaunchedEffect
-            cameraState.animateTo(
-                cameraState.position.copy(
+            mapState.animateCameraPosition(
+                mapState.cameraPosition.copy(
                     target = Position(latitude = lat, longitude = lon),
                     zoom = settings.mapZoom.toDouble()
                 )
@@ -62,13 +72,8 @@ fun MapOverlay(
     }
 
     MaplibreMap(
-        baseStyle = BaseStyle.Uri(styleUrl),
-        cameraState = cameraState,
-        options = MapOptions(
-            renderOptions = RenderOptions(
-                preferredRenderMode = RenderOptions.RenderMode.Texture
-            )
-        ),
+        state = mapState,
+        uiOptions = uiOptions,
         modifier = modifier
     )
 }

@@ -23,6 +23,7 @@ kotlin {
 
 android {
     compileSdk = 37
+    compileSdkMinor = 2
 
     defaultConfig {
         applicationId = "org.app.geotagvideocamera"
