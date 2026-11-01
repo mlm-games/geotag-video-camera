@@ -1,3 +1,32 @@
+## v2.5.7
+
+- chore(deps): bump androidx.datastore:datastore-preferences
+- chore(deps): bump androidx.core:core-location-altitude
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump gradle-wrapper from 9.8.1 to 9.8.2
+- chore(deps): bump org.maplibre.gl:android-sdk from 13.6.1 to 13.7.1
+- chore(deps): bump kotlin from 2.4.20 to 2.4.21
+- chore(deps): bump gradle-wrapper from 9.8.0 to 9.8.1
+- chore(deps): bump io.github.mlm-games.apk-dist from 0.5.2 to 0.5.3
+- chore(deps): bump androidx.navigation:navigation-compose
+- chore(deps): bump gradle-wrapper from 9.7.1 to 9.8.0
+- chore(deps): bump androidx.core:core-ktx from 1.19.0 to 1.19.1
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump maplibreComposeAndroid from 0.16.0 to 0.17.0
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump androidx.media3:media3-common from 1.11.0 to 1.11.1
+- chore(deps): bump androidx.media3:media3-transformer
+- chore(deps): bump androidx.navigation:navigation-compose
+- chore(deps): bump androidx.media3:media3-effect from 1.11.0 to 1.11.1
+- chore(deps): bump org.maplibre.gl:android-sdk from 13.6.0 to 13.6.1
+- chore(deps): bump maplibreComposeAndroid from 0.15.0 to 0.16.0
+- chore(deps): bump kotlin from 2.4.10 to 2.4.20
+- chore(deps): bump androidx.navigation:navigation-compose
+- chore(deps): bump org.maplibre.gl:android-sdk from 13.5.1 to 13.6.0
+- chore(deps): bump androidx.compose:compose-bom-alpha
+- chore(deps): bump actions/setup-java from 5 to 6
+
+
 ## v2.5.6
 
 - chore(deps): bump androidx.navigation:navigation-compose
